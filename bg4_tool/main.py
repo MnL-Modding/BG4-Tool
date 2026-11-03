@@ -10,26 +10,6 @@ from bg4_tool.constants import *
 
 
 def main():
-    # from bg4_tool.script import decompress_analyze_blz
-    # with open('_CA_INFO_.dat', 'rb') as test_in:
-    #     test_out = decompress_analyze_blz(test_in.read())
-    # with open('_CA_INFO_test.dat', 'wb') as test_in:
-    #     test_in.write(test_out)
-    # return
-
-    # from bg4_tool.script import compress_blz
-    # with open('000_decompressed.dat', 'rb') as test_in:
-    #     test_out = compress_blz(test_in.read())
-    # with open('000_recompressed.dat', 'wb') as test_in:
-    #     test_in.write(test_out)
-
-    # from bg4_tool.script import decompress_blz
-    # with open('000_recompressed.dat', 'rb') as test_in:
-    #     test_out = decompress_blz(test_in.read())
-    # with open('000_double_decompressed.dat', 'wb') as test_in:
-    #     test_in.write(test_out)
-    # return
-
     app = QtWidgets.QApplication(sys.argv)
 
     if os.name == 'nt':
