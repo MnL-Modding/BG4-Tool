@@ -1,0 +1,26 @@
+[project]
+name = "bg4_tool"
+version = "0.1.0-dev"
+description = "Viewer and editor for BG4 archive files."
+authors = [
+    {name = "ThePurpleAnon"}
+]
+license = {text = "GPL-3.0-or-later"}
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+dependencies = ["pyside6 (>=6.12.0,<7.0.0)"]
+
+[project.urls]
+repository = "https://github.com/MnL-Modding/Spritoglobin-DX"
+
+[project.scripts]
+bg4-tool = "bg4_tool:main"
+
+[tool.poetry]
+
+[tool.poetry.group.dev.dependencies]
+nuitka = "^2.6.7"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
