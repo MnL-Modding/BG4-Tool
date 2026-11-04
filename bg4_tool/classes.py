@@ -100,6 +100,9 @@ class BG4Archive:
         return entry_count
 
     def get_name_hash(self, name):
+        if name is None:
+            return None
+
         hsh = 0
         for c in reversed(name):
             hsh = (hsh * 31 + c) & 0xFFFFFFFF
@@ -254,6 +257,7 @@ class BG4Archive:
 
         for file_index, file in enumerate(self.files):
             name = file["file_name"]
+            encoded_name = None
             if name is not None:
                 encoded_name = name.encode("ascii")
 
