@@ -176,7 +176,7 @@ class MainWindow(QtWidgets.QMainWindow):
         checked = self.toggle_checkboxes[set_property].isChecked()
         self.current_bg4_data.set_property(set_property, checked)
 
-    def import_archive_file(self): # TODO: test if it even is a BG4 archive
+    def import_archive_file(self): # TODO: catch errors
         QtWidgets.QMessageBox.about(
             self,
             #: Window Title.
@@ -224,7 +224,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.initialize_tree_view()
         self.rebuild_tree_view()
 
-    def export_archive_file(self):
+    def export_archive_file(self): # TODO: catch errors
         path = Path("").resolve()
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(

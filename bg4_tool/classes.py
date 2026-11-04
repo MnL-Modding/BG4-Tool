@@ -7,7 +7,36 @@ from bg4_tool.script import decompress_blz
 def compress_blz(data):
     return data
 
-# TODO: replace ValueErrors with more descriptive errors
+# TODO: give this more errors to search for and catch, including the fallback cases
+class BG4ArchiveError(Exception):
+    """
+    Raised when an issue occurs inside the BG4Archive class.
+
+    Code 100: Fallback import error.
+    Code 101: The header was found to be corrupted during import.
+    Code 102: The header uses two-file mode, but only one file was provided.
+
+    Code 200: Fallback export error.
+    Code 201: Buckets were found to be too small when trying to export.
+    Code 202: Exported BG4 version does not support dealing with hash collisions.
+    Code 203: A file was given an offset value too large for the format. This usually means the archive is too large.
+    Code 204: A file was given an length value too large for the format. This usually means the file is too large for the archive.
+    """
+    def __init__(self, error_code):
+        message = {
+            100: "Import Error: Unknown",
+            101: "Import Error: Bad Header",
+            102: "Import Error: Data File Not Provided",
+
+            200: "Export Error: Unknown",
+            201: "Export Error: Buckets Too Small",
+            202: "Export Error: Unhandled Hash Collision",
+            203: "Export Error: File Offset Too Large",
+            204: "Export Error: File Length Too Large",
+        }[error_code]
+        super().__init__(message)
+        self.error_code = error_code
+
 class BG4Archive:
     header_magic = b"BG4\0"
     invalid_name = "(invalid)"
@@ -37,7 +66,7 @@ class BG4Archive:
         magic = in_data.read(4)
 
         if magic != self.header_magic:
-            raise ValueError
+            raise BG4ArchiveError(101)
         
         properties, entry_count, header_length, bucket_count, bucket_size = struct.unpack("<HHIHH", in_data.read(12))
 
@@ -47,7 +76,7 @@ class BG4Archive:
         self.properties[self.preserve_order_keyword] = (properties & 0x0200) != 0
 
         if entry_count != (bucket_count * bucket_size) and self.properties[self.version_keyword] == 4:
-            raise ValueError
+            raise BG4ArchiveError(101)
 
         # TODO: deprecate
         self.bucket_count = bucket_count
@@ -72,7 +101,7 @@ class BG4Archive:
         in_data_sub = in_data
         if not self.properties[self.single_file_keyword]:
             if input_data_sub is None:
-                raise ValueError
+                raise BG4ArchiveError(102)
             in_data_sub = BytesIO(input_data_sub)
 
         name_sorting = {}
@@ -224,8 +253,10 @@ class BG4Archive:
             if self.properties[self.single_file_keyword]:
                 offset += header_length
 
-            # TODO: throw error if this exceeds the valid range
-            files[file_index]["data_offset"] = offset & 0x3FFFFFFF
+            data_offset = offset
+            if data_offset != (data_offset & 0x3FFFFFFF):
+                raise BG4ArchiveError(203)
+            files[file_index]["data_offset"] = data_offset
             if self.get_file_is_compressed(name_or_hash):
                 files[file_index]["data_offset"] |= 0x80000000
 
@@ -236,9 +267,11 @@ class BG4Archive:
             elif (data_is_compressed) and (not is_compressed):
                 data = decompress_blz(data)
 
-            # TODO: add hash collision flag (0x40000000)
-            # TODO: throw error if this exceeds the valid range
-            files[file_index]["data_length"] = len(data) & 0x3FFFFFFF
+            # TODO: add hash collision flag (0x40000000) and error 202
+            data_length = len(data)
+            if data_length != (data_length & 0x3FFFFFFF):
+                raise BG4ArchiveError(204)
+            files[file_index]["data_length"] = data_length
             data_section.extend(data)
 
             extra_padding = (4 - (len(data_section) % 4)) % 4
@@ -256,7 +289,7 @@ class BG4Archive:
             buckets[bucket_id].append(file)
 
             if len(buckets[bucket_id]) > bucket_size:
-                raise ValueError
+                raise BG4ArchiveError(201)
 
         invalid_file = {"name_offset": 0, "name_hash": 0xFFFFFFFF, "data_offset": 0, "data_length": 0x80000000, "file_index": None}
         order_table = []
