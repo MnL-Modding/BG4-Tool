@@ -92,9 +92,11 @@ class BG4Archive:
                 name_offset = None
 
             is_compressed = (data_offset & 0x80000000) != 0
-            data_offset &= 0x7FFFFFFF
+            # TODO: find real mask for offset
+            data_offset &= 0x3FFFFFFF
 
             is_invalid = (data_length & 0x80000000) != 0
+            # TODO: find real mask for offset
             data_length &= 0x3FFFFFFF
 
             if is_invalid: continue
@@ -222,8 +224,8 @@ class BG4Archive:
             if self.properties[self.single_file_keyword]:
                 offset += header_length
 
-            # TODO: find real mask for offset
-            files[file_index]["data_offset"] = offset & 0x7FFFFFFF
+            # TODO: throw error if this exceeds the valid range
+            files[file_index]["data_offset"] = offset & 0x3FFFFFFF
             if self.get_file_is_compressed(name_or_hash):
                 files[file_index]["data_offset"] |= 0x80000000
 
@@ -235,7 +237,7 @@ class BG4Archive:
                 data = decompress_blz(data)
 
             # TODO: add hash collision flag (0x40000000)
-            # TODO: find real mask for length
+            # TODO: throw error if this exceeds the valid range
             files[file_index]["data_length"] = len(data) & 0x3FFFFFFF
             data_section.extend(data)
 
