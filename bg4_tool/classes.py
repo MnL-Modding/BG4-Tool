@@ -7,7 +7,6 @@ from bg4_tool.script import decompress_blz
 def compress_blz(data):
     return data
 
-# TODO: give this more errors to search for and catch, including the fallback cases
 class BG4ArchiveError(Exception):
     """
     Raised when an issue occurs inside the BG4Archive class.
@@ -21,6 +20,13 @@ class BG4ArchiveError(Exception):
     Code 202: Exported BG4 version does not support dealing with hash collisions.
     Code 203: A file was given an offset value too large for the format. This usually means the archive is too large.
     Code 204: A file was given an length value too large for the format. This usually means the file is too large for the archive.
+    Code 205: A file was found to not have an associated name, which is required in this BG4 version.
+    Code 206: A file was found to not have an associated name hash, which is required in this BG4 version.
+
+    Code 300: Fallback access error.
+    Code 301: Requested header property does not exist.
+    Code 302: Requested file name does not exist.
+    Code 303: Requested file index does not exist in file list.
     """
     def __init__(self, error_code):
         message = {
@@ -33,7 +39,14 @@ class BG4ArchiveError(Exception):
             202: "Export Error: Unhandled Hash Collision",
             203: "Export Error: File Offset Too Large",
             204: "Export Error: File Length Too Large",
-        }[error_code]
+            205: "Export Error: File Name Required",
+            206: "Export Error: File Name Hash Required",
+
+            300: "Access Error: Unknown",
+            301: "Access Error: Bad Property",
+            302: "Access Error: Bad File Name",
+            303: "Access Error: File Does Not Exist",
+        }.get(error_code, f"Error Code {error_code} Not Implemented")
         super().__init__(message)
         self.error_code = error_code
 
@@ -151,6 +164,12 @@ class BG4Archive:
         for offset in sorted(name_sorting.keys()):
             self.files.append(name_sorting[offset])
 
+    def _check_file_index(self, file_index):
+        try:
+            self.files[file_index]
+        except IndexError:
+            raise BG4ArchiveError(303)
+
     def get_file_id_by_name_or_hash(self, file_name):
         if isinstance(file_name, str):
             list_to_check = [item["file_name"] for item in self.files]
@@ -159,16 +178,23 @@ class BG4Archive:
         else:
             return None
 
+        if file_name not in list_to_check:
+            raise BG4ArchiveError(302)
         return list_to_check.index(file_name)
 
     def set_property(self, set_property, value):
+        if set_property not in self.properties:
+            raise BG4ArchiveError(301)
         self.properties[set_property] = value
 
     def get_property(self, get_property):
+        if get_property not in self.properties:
+            raise BG4ArchiveError(301)
         return self.properties[get_property]
 
-    def put_file(self, file_name, file_data, is_by_index = False):
+    def put_file(self, file_name, file_data, is_by_index = False): # TODO: account for files that don't already exist
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
+        self._check_file_index(file_index)
 
         is_compressed = False
         # TODO: check whether to compress
@@ -178,6 +204,7 @@ class BG4Archive:
 
     def get_uncompressed_file_contents(self, file_name, is_by_index = False):
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
+        self._check_file_index(file_index)
 
         file_data = self.files[file_index]["data"]
         if self.get_file_data_is_compressed(file_name):
@@ -186,16 +213,19 @@ class BG4Archive:
 
     def get_file_contents(self, file_name, is_by_index = False):
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
+        self._check_file_index(file_index)
 
         return self.files[file_index]["data"]
 
     def get_file_is_compressed(self, file_name, is_by_index = False):
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
+        self._check_file_index(file_index)
 
         return self.files[file_index]["is_compressed"]
 
     def get_file_data_is_compressed(self, file_name, is_by_index = False):
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
+        self._check_file_index(file_index)
 
         return self.files[file_index]["data_is_compressed"]
 
@@ -226,9 +256,13 @@ class BG4Archive:
                 encoded_name = name.encode("ascii")
 
             hsh = self.get_name_hash(encoded_name) if file["name_hash"] is None else file["name_hash"]
+            if hsh is None:
+                raise BG4ArchiveError(206)
 
             files[file_index] = {"name_offset": len(name_section), "name_hash": hsh}
             if self.properties[self.version_keyword] > 3:
+                if name is None:
+                    raise BG4ArchiveError(205)
                 name_section.extend(encoded_name + b'\0')
 
         entry_size = 12

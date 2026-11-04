@@ -33,6 +33,7 @@ if __name__ == '__main__':
 
 # TODO: be able to drag and drop files to reorganize and move between folders
 # TODO: be able to drop BG4 archives onto the window to import them
+# TODO: catch Access (300) errors
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent):
         super(MainWindow, self).__init__()
