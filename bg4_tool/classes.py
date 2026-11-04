@@ -14,6 +14,7 @@ class BG4ArchiveError(Exception):
     Code 100: Fallback import error.
     Code 101: The header was found to be corrupted during import.
     Code 102: The header uses two-file mode, but only one file was provided.
+    Code 103: The header uses file indexing, but the table is corrupted.
 
     Code 200: Fallback export error.
     Code 201: Buckets were found to be too small when trying to export.
@@ -33,6 +34,7 @@ class BG4ArchiveError(Exception):
             100: "Import Error: Unknown",
             101: "Import Error: Bad Header",
             102: "Import Error: Data File Not Provided",
+            103: "Import Error: Bad Index Table",
 
             200: "Export Error: Unknown",
             201: "Export Error: Buckets Too Small",
@@ -158,7 +160,7 @@ class BG4Archive:
             file_data = in_data_sub.read(data_length)
 
             file = {"file_name": file_name, "name_hash": name_hash if file_name is None else None, "is_compressed": is_compressed, "data": file_data, "data_is_compressed": is_compressed}
-            # TODO: have this pull from the archive's index table if it has one
+            # TODO: have this pull from the archive's index table if it has one, catch any exceptions that may raise with error code 103
             name_sorting[data_offset] = file
 
         for offset in sorted(name_sorting.keys()):
