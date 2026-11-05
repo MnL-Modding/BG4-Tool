@@ -197,7 +197,12 @@ class BG4Archive:
             raise BG4ArchiveError(301)
         return self.properties[get_property]
 
-    def put_file(self, file_name, file_data, is_by_index = False): # TODO: account for files that don't already exist
+    def new_file(self, file_name, file_data):
+        file_index = len(self.files)
+        self.files.append({"file_name": file_name, "name_hash": None})
+        self.set_file_data(file_index, file_data, is_by_index = True)
+
+    def set_file_data(self, file_name, file_data, is_by_index = False):
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
         self._check_file_index(file_index)
 

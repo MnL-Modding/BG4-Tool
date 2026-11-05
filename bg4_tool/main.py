@@ -320,7 +320,7 @@ class MainWindow(QtWidgets.QMainWindow):
             data, _ = self._general_import_file()
             if data is None:
                 return
-            self.current_bg4_data.put_file(item_name, data)
+            self.current_bg4_data.set_file_data(item_name, data)
 
         def extract_file(item_name):
             data = self.current_bg4_data.get_uncompressed_file_contents(item_name)
