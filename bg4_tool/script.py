@@ -1,6 +1,5 @@
 def decompress_blz(data):
-    if not isinstance(data, bytearray):
-        data = bytearray(data)
+    data = bytearray(data)
 
     compressed_len = int.from_bytes(data[-8:-5], 'little')
     footer_len = data[-5]

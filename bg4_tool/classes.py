@@ -138,12 +138,11 @@ class BG4Archive:
                 data_offset, data_length, name_hash = struct.unpack("<III", in_data.read(entry_size))
                 name_offset = None
 
+            # TODO: implement other compression types
             is_compressed = (data_offset & 0x80000000) != 0
-            # TODO: find real mask for offset
             data_offset &= 0x3FFFFFFF
 
-            is_invalid = (data_length & 0x80000000) != 0
-            # TODO: find real mask for offset
+            is_invalid = ((data_length & 0x80000000) != 0) or ((data_offset & 0xC0000000) == 0xC0000000)
             data_length &= 0x3FFFFFFF
 
             if is_invalid: continue
