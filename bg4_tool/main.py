@@ -144,16 +144,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = {
             3: [
-                self.tr("Lossy Binary Search"),
-                self.tr("Uses binary searching to sort through every file's name hash. Does not store file names, and fails to export if two file names share a hash."),
+                self.tr("Quick Binary Search"),
+                self.tr("Uses binary searching to quickly sort through every file's name hash. Does not store file names, and fails to export if two file names share a hash."),
             ],
             4: [
                 self.tr("Quick Name Lookup"),
-                self.tr("Uses search buckets to narrow down the file being searched for extremely quickly."),
+                self.tr("Uses search buckets to narrow down the file being searched for extremely quickly. Stores file names in case two names share a hash."),
             ],
             5: [
-                self.tr("Quick Binary Search"),
-                self.tr("Uses binary searching to quickly sort through every file's name hash."),
+                self.tr("Safe Binary Search"),
+                self.tr("Uses binary searching to sort through every file's name hash. Stores file names in case two names share a hash."),
             ],
         }
 
