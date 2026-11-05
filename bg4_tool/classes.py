@@ -29,7 +29,7 @@ class BG4ArchiveError(Exception):
     Code 302: Requested file name does not exist.
     Code 303: Requested file index does not exist in file list.
     """
-    def __init__(self, error_code):
+    def __init__(self, error_code, file_indeces = []):
         message = {
             100: "Import Error: Unknown",
             101: "Import Error: Bad Header",
@@ -51,6 +51,7 @@ class BG4ArchiveError(Exception):
         }.get(error_code, f"Error Code {error_code} Not Implemented")
         super().__init__(message)
         self.error_code = error_code
+        self.file_indeces = file_indeces
 
 class BG4Archive:
     header_magic = b"BG4\0"
@@ -262,12 +263,12 @@ class BG4Archive:
 
             hsh = self.get_name_hash(encoded_name) if file["name_hash"] is None else file["name_hash"]
             if hsh is None:
-                raise BG4ArchiveError(206)
+                raise BG4ArchiveError(206, [file_index])
 
             files[file_index] = {"name_offset": len(name_section), "name_hash": hsh}
             if self.properties[self.version_keyword] > 3:
                 if name is None:
-                    raise BG4ArchiveError(205)
+                    raise BG4ArchiveError(205, [file_index])
                 name_section.extend(encoded_name + b'\0')
 
         entry_size = 12
@@ -306,10 +307,10 @@ class BG4Archive:
             elif (data_is_compressed) and (not is_compressed):
                 data = decompress_blz(data)
 
-            # TODO: add hash collision flag (0x40000000) and error 202
+            # TODO: add hash collision flag (0x40000000) and error 202 (as well as providing all offending file indeces)
             data_length = len(data)
             if data_length != (data_length & 0x3FFFFFFF):
-                raise BG4ArchiveError(204)
+                raise BG4ArchiveError(204, [file_index])
             files[file_index]["data_length"] = data_length
             data_section.extend(data)
 

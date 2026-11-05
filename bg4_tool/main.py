@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from bg4_tool.classes import BG4Archive
+from bg4_tool.classes import BG4Archive, BG4ArchiveError
 from bg4_tool.constants import *
 
 
@@ -33,7 +33,6 @@ if __name__ == '__main__':
 
 # TODO: be able to drag and drop files to reorganize and move between folders
 # TODO: be able to drop BG4 archives onto the window to import them
-# TODO: catch Access (300) errors
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent):
         super(MainWindow, self).__init__()
@@ -159,6 +158,41 @@ class MainWindow(QtWidgets.QMainWindow):
             "blz":    self._grab_icon(icon_path, 4, (16, 16)),
         }
 
+    def _throw_error(self, error_code, error_message, file_indeces):
+        verbose_message = { # super easy errors are given a translatable "extra info" blurb.
+            #100: "Import Error: Unknown",
+             101: self.tr("This file's header is not valid. It may be compressed, corrupted, or not an archive at all."),
+            #102: "Import Error: Data File Not Provided",
+             103: self.tr("This file's header is not valid. It may be compressed, corrupted, or not an archive at all."),
+
+            #200: "Export Error: Unknown",
+            #201: "Export Error: Buckets Too Small",
+             202: self.tr("Multiple files' names yielded the same hash, which cannot be handled with the current export settings."),
+             203: self.tr("Archive is too large to export."),
+             204: self.tr("File within archive is too large to export."),
+             205: self.tr("At least one file lacks a name, which cannot be handled with the current export settings."),
+             206: self.tr("At least one file lacks a name, which cannot be handled with the current export settings."),
+
+            #300: "Access Error: Unknown",
+            #301: "Access Error: Bad Property",
+            #302: "Access Error: Bad File Name",
+            #303: "Access Error: File Does Not Exist",
+        }.get(error_code)
+
+        #: Formatted as "Error 101 - Import Error: Bad Header" for example
+        error_string_0 = self.tr("An error has occured!\nError {0} - {1}").format(error_code, error_message)
+        #: Appended directly to the first error string if a special blurb is provided for the current error
+        error_string_1 = self.tr("\n\nAdditional info about this error:\n{0}").format(verbose_message) if verbose_message is not None else ""
+        #: Appended directly to the first and second error string if file indeces were provided for the error
+        error_string_2 = self.tr("\n\nThe following file ID(s) raised this error:\n{0}").format(QtCore.QLocale().createSeparatedList([str(number) for number in file_indeces])) if len(file_indeces) > 0 else ""
+
+        QtWidgets.QMessageBox.warning(
+            self,
+            #: Window Title.
+            self.tr("An Error Has Occurred"),
+            error_string_0 + error_string_1 + error_string_2,
+        )
+
 
 
     def new_file(self):
@@ -177,7 +211,7 @@ class MainWindow(QtWidgets.QMainWindow):
         checked = self.toggle_checkboxes[set_property].isChecked()
         self.current_bg4_data.set_property(set_property, checked)
 
-    def import_archive_file(self): # TODO: catch errors
+    def import_archive_file(self):
         QtWidgets.QMessageBox.about(
             self,
             #: Window Title.
@@ -191,41 +225,44 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.current_bg4_data = BG4Archive()
 
-        if self.current_bg4_data.archive_uses_single_file(primary_file):
-            self.current_bg4_data.import_archive(primary_file)
-            self.update_name(path.stem)
-        else:
-            header_name = path.stem
-            data_name = header_name.removesuffix("_Header") + "_Data"
-            secondary_path = path.with_stem(data_name)
-
-            # i think this might be the funniest code to read that i've ever written
-            not_exist = not os.path.exists(secondary_path)
-            if not not_exist and not os.path.isfile(secondary_path):
-                not_exist = True
-
-            if not_exist:
-                QtWidgets.QMessageBox.about(
-                    self,
-                    #: Window Title.
-                    self.tr("Data File Needed"),
-                    self.tr("Please select the BG4 Archive's Data section file."),
-                )
-
-                secondary_file, _ = self._general_import_file()
-                if secondary_file is None:
-                    return
+        try:
+            if self.current_bg4_data.archive_uses_single_file(primary_file):
+                self.current_bg4_data.import_archive(primary_file)
+                self.update_name(path.stem)
             else:
-                with open(secondary_path, "rb") as file:
-                    secondary_file = file.read()
+                header_name = path.stem
+                data_name = header_name.removesuffix("_Header") + "_Data"
+                secondary_path = path.with_stem(data_name)
 
-            self.current_bg4_data.import_archive(primary_file, secondary_file)
-            self.update_name(header_name.removesuffix("_Header"))
+                # i think this might be the funniest code to read that i've ever written
+                not_exist = not os.path.exists(secondary_path)
+                if not not_exist and not os.path.isfile(secondary_path):
+                    not_exist = True
 
-        self.initialize_tree_view()
-        self.rebuild_tree_view()
+                if not_exist:
+                    QtWidgets.QMessageBox.about(
+                        self,
+                        #: Window Title.
+                        self.tr("Data File Needed"),
+                        self.tr("Please select the BG4 Archive's Data section file."),
+                    )
 
-    def export_archive_file(self): # TODO: catch errors
+                    secondary_file, _ = self._general_import_file()
+                    if secondary_file is None:
+                        return
+                else:
+                    with open(secondary_path, "rb") as file:
+                        secondary_file = file.read()
+
+                self.current_bg4_data.import_archive(primary_file, secondary_file)
+                self.update_name(header_name.removesuffix("_Header"))
+        except BG4ArchiveError as e:
+            self._throw_error(e.error_code, str(e), e.file_indeces)
+        else:
+            self.initialize_tree_view()
+            self.rebuild_tree_view()
+
+    def export_archive_file(self):
         path = Path("").resolve()
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -238,25 +275,28 @@ class MainWindow(QtWidgets.QMainWindow):
         if path == '':
             return
 
-        main_file, sub_file = self.current_bg4_data.export_archive()
-
-        if sub_file is None:
-            with open(path, "wb") as file:
-                file.write(main_file)
+        try:
+            main_file, sub_file = self.current_bg4_data.export_archive()
+        except BG4ArchiveError as e:
+            self._throw_error(e.error_code, str(e), e.file_indeces)
         else:
-            path = Path(path)
-            name = path.stem
-            with open(path.with_stem(name + "_Header"), "wb") as file:
-                file.write(main_file)
-            with open(path.with_stem(name + "_Data"), "wb") as file:
-                file.write(sub_file)
+            if sub_file is None:
+                with open(path, "wb") as file:
+                    file.write(main_file)
+            else:
+                path = Path(path)
+                name = path.stem
+                with open(path.with_stem(name + "_Header"), "wb") as file:
+                    file.write(main_file)
+                with open(path.with_stem(name + "_Data"), "wb") as file:
+                    file.write(sub_file)
 
-        QtWidgets.QMessageBox.about(
-            self,
-            #: Window Title.
-            self.tr("Export Successful"),
-            self.tr("{0} has been successfully exported!").format(self.current_bg4_name),
-        )
+            QtWidgets.QMessageBox.about(
+                self,
+                #: Window Title.
+                self.tr("Export Successful"),
+                self.tr("{0} has been successfully exported!").format(self.current_bg4_name),
+            )
 
 
 
