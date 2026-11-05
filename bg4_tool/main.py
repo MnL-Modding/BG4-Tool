@@ -249,8 +249,8 @@ class MainWindow(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.about(
             self,
             #: Window Title.
-            self.tr("Select a BG4 Archive"),
-            self.tr("Please select a BG4 Archive to import."),
+            self.tr("Select an Archive"),
+            self.tr("Please select an archive to import."),
         )
 
         primary_file, path = self._general_import_file()
@@ -278,7 +278,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         self,
                         #: Window Title.
                         self.tr("Data File Needed"),
-                        self.tr("Please select the BG4 Archive's Data section file."),
+                        self.tr("Please select the archive's Data section file."),
                     )
 
                     secondary_file, _ = self._general_import_file()
