@@ -255,6 +255,9 @@ class BG4Archive:
         if self.properties[self.version_keyword] == 4:
             name_section.extend(self.invalid_name.encode("ascii") + b'\0')
 
+        hash_dict = {}
+        hash_collisions = set()
+
         for file_index, file in enumerate(self.files):
             name = file["file_name"]
             encoded_name = None
@@ -264,6 +267,12 @@ class BG4Archive:
             hsh = self.get_name_hash(encoded_name) if file["name_hash"] is None else file["name_hash"]
             if hsh is None:
                 raise BG4ArchiveError(206, [file_index])
+
+            if hsh in hash_dict.keys():
+                if not self.properties[self.version_keyword] > 3:
+                    raise BG4ArchiveError(202, [hash_dict[hsh], file_index])
+                hash_collisions.add(hsh)
+            hash_dict[hsh] = file_index
 
             files[file_index] = {"name_offset": len(name_section), "name_hash": hsh}
             if self.properties[self.version_keyword] > 3:
@@ -307,12 +316,13 @@ class BG4Archive:
             elif (data_is_compressed) and (not is_compressed):
                 data = decompress_blz(data)
 
-            # TODO: add hash collision flag (0x40000000) and error 202 (as well as providing all offending file indeces)
             data_length = len(data)
             if data_length != (data_length & 0x3FFFFFFF):
                 raise BG4ArchiveError(204, [file_index])
             files[file_index]["data_length"] = data_length
             data_section.extend(data)
+            if files[file_index]["name_hash"] in hash_collisions:
+                files[file_index]["data_length"] |= 0x40000000
 
             extra_padding = (4 - (len(data_section) % 4)) % 4
             data_section.extend(b"\xFF" * extra_padding)
