@@ -187,7 +187,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "blz":    self._grab_icon(icon_path, 4, (16, 16)),
         }
 
-    def _throw_error(self, error_code, error_message, file_indeces):
+    def _throw_error(self, error_code, error_message, file_indices):
         verbose_message = { # super easy errors are given a translatable "extra info" blurb.
             #100: "Import Error: Unknown",
              101: self.tr("This file's header is not valid. It may be compressed, corrupted, or not an archive at all."),
@@ -212,8 +212,8 @@ class MainWindow(QtWidgets.QMainWindow):
         error_string_0 = self.tr("An error has occured!\nError {0} - {1}").format(error_code, error_message)
         #: Appended directly to the first error string if a special blurb is provided for the current error
         error_string_1 = self.tr("\n\nAdditional info about this error:\n{0}").format(verbose_message) if verbose_message is not None else ""
-        #: Appended directly to the first and second error string if file indeces were provided for the error
-        error_string_2 = self.tr("\n\nThe following file ID(s) raised this error:\n{0}").format(QtCore.QLocale().createSeparatedList([str(number) for number in file_indeces])) if len(file_indeces) > 0 else ""
+        #: Appended directly to the first and second error string if file indices were provided for the error
+        error_string_2 = self.tr("\n\nThe following file ID(s) raised this error:\n{0}").format(QtCore.QLocale().createSeparatedList([str(number) for number in file_indices])) if len(file_indices) > 0 else ""
 
         QtWidgets.QMessageBox.warning(
             self,
@@ -291,7 +291,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.current_bg4_data.import_archive(primary_file, secondary_file)
                 self.update_name(header_name.removesuffix("_Header"))
         except BG4ArchiveError as e:
-            self._throw_error(e.error_code, str(e), e.file_indeces)
+            self._throw_error(e.error_code, str(e), e.file_indices)
         else:
             self.initialize_tree_view()
             self.rebuild_tree_view()
@@ -327,7 +327,7 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             main_file, sub_file = self.current_bg4_data.export_archive()
         except BG4ArchiveError as e:
-            self._throw_error(e.error_code, str(e), e.file_indeces)
+            self._throw_error(e.error_code, str(e), e.file_indices)
         else:
             if sub_file is None:
                 with open(path, "wb") as file:

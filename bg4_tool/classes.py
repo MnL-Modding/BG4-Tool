@@ -30,7 +30,7 @@ class BG4ArchiveError(Exception):
     Code 303: Requested file index does not exist in file list.
     Code 304: Requested version is not supported.
     """
-    def __init__(self, error_code, file_indeces = []):
+    def __init__(self, error_code, file_indices = []):
         message = {
             100: "Import Error: Unknown",
             101: "Import Error: Bad Header",
@@ -53,7 +53,7 @@ class BG4ArchiveError(Exception):
         }.get(error_code, f"Error Code {error_code} Not Implemented")
         super().__init__(message)
         self.error_code = error_code
-        self.file_indeces = file_indeces
+        self.file_indices = file_indices
 
 class BG4Archive:
     header_magic = b"BG4\0"
