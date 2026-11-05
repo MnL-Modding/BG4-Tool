@@ -144,7 +144,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = {
             3: [
-                self.tr("Quick Binary Search"),
+                self.tr("Compact Binary Search"),
                 self.tr("Uses binary searching to quickly sort through every file's name hash. Does not store file names, and fails to export if two file names share a hash."),
             ],
             4: [
@@ -304,7 +304,7 @@ class MainWindow(QtWidgets.QMainWindow):
         warning = None
         match version:
             case 3:
-                warning = self.tr("You are using Version 3 to export this archive. This is supported, but not recommended.\n\nSince file names are lost when exporting this way, other people will not be able to see file names when importing the archive.\n\nUsing Version 3 also means other programs may not be able to open this archive properly.")
+                warning = self.tr("You are using Version 3 to export this archive. This is supported, but not recommended.\n\nSince file names are lost when exporting this way, you or other people will not be able to see file names when importing the archive.\n\nUsing Version 3 also means other programs may not be able to open this archive properly.")
 
         if warning is not None:
             QtWidgets.QMessageBox.warning(
