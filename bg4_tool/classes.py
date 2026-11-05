@@ -28,6 +28,7 @@ class BG4ArchiveError(Exception):
     Code 301: Requested header property does not exist.
     Code 302: Requested file name does not exist.
     Code 303: Requested file index does not exist in file list.
+    Code 304: Requested version is not supported.
     """
     def __init__(self, error_code, file_indeces = []):
         message = {
@@ -48,6 +49,7 @@ class BG4ArchiveError(Exception):
             301: "Access Error: Bad Property",
             302: "Access Error: Bad File Name",
             303: "Access Error: File Does Not Exist",
+            304: "Access Error: Unsupported Version",
         }.get(error_code, f"Error Code {error_code} Not Implemented")
         super().__init__(message)
         self.error_code = error_code
@@ -56,8 +58,8 @@ class BG4ArchiveError(Exception):
 class BG4Archive:
     header_magic = b"BG4\0"
     invalid_name = "(invalid)"
+    supported_versions = [3, 4, 5]
 
-    # TODO: expose version to user
     version_keyword = "version"
     single_file_keyword = "single_file"
     preserve_order_keyword = "preserve_order"
@@ -190,6 +192,8 @@ class BG4Archive:
     def set_property(self, set_property, value):
         if set_property not in self.properties:
             raise BG4ArchiveError(301)
+        if set_property == self.version_keyword and value not in self.supported_versions:
+            raise BG4ArchiveError(304)
         self.properties[set_property] = value
 
     def get_property(self, get_property):

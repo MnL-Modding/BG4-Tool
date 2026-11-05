@@ -85,10 +85,17 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout = QtWidgets.QGridLayout(main)
         self.setCentralWidget(main)
 
+        self.version_selector_text = QtWidgets.QLabel()
+        self.version_selector = QtWidgets.QComboBox()
+        self.version_selector.addItems([str(i) for i in BG4Archive.supported_versions])
+        self.version_selector.currentIndexChanged.connect(self.set_version)
+        main_layout.addWidget(self.version_selector_text, 0, 0)
+        main_layout.addWidget(self.version_selector, 1, 0)
+
         checkboxes = QtWidgets.QWidget()
         checkboxes_layout = QtWidgets.QVBoxLayout(checkboxes)
         checkboxes_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(checkboxes, 0, 0)
+        main_layout.addWidget(checkboxes, 2, 0)
 
         toggles = [
             BG4Archive.single_file_keyword,
@@ -108,7 +115,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.file_tree.setColumnCount(2)
         self.file_tree.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_tree.customContextMenuRequested.connect(self.tree_context_menu)
-        main_layout.addWidget(self.file_tree, 1, 0)
+        main_layout.addWidget(self.file_tree, 3, 0)
 
         self._set_program_icons()
         self._set_program_text()
@@ -133,14 +140,36 @@ class MainWindow(QtWidgets.QMainWindow):
         #: The "&" symbol will underline a letter and cause the option to be selectable by pressing the letter on your keyboard while holding Alt. Please ensure all letters that are given this property within each submenu and in the toolbar itself are unique, so all options can be selected this way.
         self.menu_bar_file_quit.setText(self.tr("&Quit"))
 
+        self.version_selector_text.setText(self.tr("Archive Version:"))
+
+        versions = {
+            3: [
+                self.tr("Lossy Binary Search"),
+                self.tr("Uses binary searching to sort through every file's name hash. Does not store file names, and fails to export if two file names share a hash."),
+            ],
+            4: [
+                self.tr("Quick Name Lookup"),
+                self.tr("Uses search buckets to narrow down the file being searched for extremely quickly."),
+            ],
+            5: [
+                self.tr("Quick Binary Search"),
+                self.tr("Uses binary searching to quickly sort through every file's name hash."),
+            ],
+        }
+
+        for i, version in enumerate(BG4Archive.supported_versions):
+            name_string, desc_string = versions[version]
+            self.version_selector.setItemText(i, self.tr("Version {0}: {1}").format(version, name_string))
+            self.version_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
+
         toggles = {
             BG4Archive.single_file_keyword: [
                 self.tr("Export Single File"),
-                self.tr("Disabling this will split the archive into a '_Header' file and a\n'_Data' file. Lowers RAM overhead for extremely large archives."),
+                self.tr("Disabling this will split the archive into a '_Header' file and a '_Data' file. Lowers RAM overhead for extremely large archives."),
             ],
             BG4Archive.preserve_order_keyword: [
                 self.tr("Preserve File Order"),
-                self.tr("Creates an additional table that tracks the index of each file in the\narchive. Necessary for archives that can use an index to find a file."),
+                self.tr("Creates an additional table that tracks the index of each file in the archive. Necessary for archives that can use an index to find a file."),
             ],
         }
 
@@ -207,6 +236,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_bg4_name = name
         self.setWindowTitle(name)
 
+    def set_version(self, version_index):
+        set_property = BG4Archive.version_keyword
+        version = BG4Archive.supported_versions[version_index]
+        self.current_bg4_data.set_property(set_property, version)
+
     def toggle_property(self, set_property):
         checked = self.toggle_checkboxes[set_property].isChecked()
         self.current_bg4_data.set_property(set_property, checked)
@@ -264,6 +298,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def export_archive_file(self):
         path = Path("").resolve()
+
+        key = BG4Archive.version_keyword
+        version = self.current_bg4_data.get_property(key)
+        warning = None
+        match version:
+            case 3:
+                warning = self.tr("You are using Version 3 to export this archive. This is supported, but not recommended.\n\nSince file names are lost when exporting this way, other people will not be able to see file names when importing the archive.\n\nUsing Version 3 also means other programs may not be able to open this archive properly.")
+
+        if warning is not None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                #: Window Title.
+                self.tr("Export Settings Not Recommended"),
+                warning,
+            )
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
@@ -349,6 +398,14 @@ class MainWindow(QtWidgets.QMainWindow):
         top_parent.item_type = "top"
 
     def rebuild_tree_view(self):
+        key = BG4Archive.version_keyword
+        version = self.current_bg4_data.get_property(key)
+        version_index = BG4Archive.supported_versions.index(version)
+
+        self.version_selector.blockSignals(True)
+        self.version_selector.setCurrentIndex(version_index)
+        self.version_selector.blockSignals(False)
+
         for key, checkbox in self.toggle_checkboxes.items():
             toggle_state = self.current_bg4_data.get_property(key)
             checkbox.setChecked(toggle_state)
