@@ -47,6 +47,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_bg4_data = None
         self.current_save_path = None
 
+        self.current_bg4_name = ""
+        self.current_bg4_saved = True
+
+        self._update_window_title()
+
         menu_bar = self.menuBar()
         self.menu_bar_file = menu_bar.addMenu("file")
 
@@ -237,7 +242,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def new_file(self):
         self.current_bg4_data = BG4Archive()
         #: Name for a newly created archive.
-        self.update_name(self.tr("Untitled"))
+        self._update_name(self.tr("Untitled"))
+        self._update_saved(True)
         self.rebuild_tree_view()
 
     def save_file(self, force_try = False):
@@ -274,7 +280,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 file_path.write(file_data)
 
         self.current_save_path = folder_path
-        self.update_name(folder_path.stem)
+        self._update_name(folder_path.stem)
+        self._update_saved(True)
         self.rebuild_tree_view()
 
     def _gather_archive_file_names(self, archive):
@@ -283,25 +290,38 @@ class MainWindow(QtWidgets.QMainWindow):
             if file["file_name"] is not None:
                 archive_file_names.append(file["file_name"])
             elif file["name_hash"] is not None:
-                archive_file_names.append(f"(hash;{i:04X};{file["name_hash"]:08X})")
+                archive_file_names.append(f"(hash;{file["name_hash"]:08X})")
             else:
                 archive_file_names.append(f"(index;{i:04X})")
         return archive_file_names
 
 
 
-    def update_name(self, name):
+    def _update_name(self, name):
         self.current_bg4_name = name
+        self._update_window_title()
+
+    # TODO: keep track of what was actually changed so the whole thing doesn't need to be saved every time
+    def _update_saved(self, saved):
+        self.current_bg4_saved = saved
+        self._update_window_title()
+
+    def _update_window_title(self):
+        name = self.current_bg4_name
+        if not self.current_bg4_saved:
+            name += "*"
         self.setWindowTitle(name)
 
     def set_version(self, version_index):
         set_property = BG4Archive.version_keyword
         version = BG4Archive.supported_versions[version_index]
         self.current_bg4_data.set_property(set_property, version)
+        self._update_saved(False)
 
     def toggle_property(self, set_property):
         checked = self.toggle_checkboxes[set_property].isChecked()
         self.current_bg4_data.set_property(set_property, checked)
+        self._update_saved(False)
 
     def import_archive_file(self):
         QtWidgets.QMessageBox.about(
@@ -315,8 +335,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if primary_file is None:
             return
 
-        self.current_bg4_data = self._import_archive_file(primary_file, path)
+        self.current_bg4_data, name = self._import_archive_file(primary_file, path)
+        self._update_name(name)
 
+        self.current_save_path = None
+        self._update_saved(False)
         self.initialize_tree_view()
         self.rebuild_tree_view()
 
@@ -325,7 +348,7 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             if archive_data.archive_uses_single_file(primary_file):
                 archive_data.import_archive(primary_file)
-                self.update_name(path.stem)
+                archive_name = path.stem
             else:
                 header_name = path.stem
                 data_name = header_name.removesuffix("_Header") + "_Data"
@@ -352,11 +375,11 @@ class MainWindow(QtWidgets.QMainWindow):
                         secondary_file = file.read()
 
                 archive_data.import_archive(primary_file, secondary_file)
-                self.update_name(header_name.removesuffix("_Header"))
+                archive_name = header_name.removesuffix("_Header")
         except BG4ArchiveError as e:
             self._throw_error(e.error_code, str(e), e.file_indices)
         else:
-            return archive_data
+            return archive_data, archive_name
 
     def export_archive_file(self):
         path = Path("").resolve()
@@ -432,6 +455,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if data is None:
                 return
             self.current_bg4_data.set_file_data(item_name, data)
+            self._update_saved(True)
 
         def extract_file(item_name):
             data = self.current_bg4_data.get_uncompressed_file_contents(item_name)
