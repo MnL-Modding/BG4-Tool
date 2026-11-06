@@ -68,7 +68,7 @@ class BG4Archive:
         # hi   ------>   lo
         # xxxxxxPS VVVVVVVV
         self.properties = {
-            self.version_keyword:        4,
+            self.version_keyword:        5,
             self.single_file_keyword:    True,
             self.preserve_order_keyword: False,
         }
@@ -221,7 +221,7 @@ class BG4Archive:
         self._check_file_index(file_index)
 
         file_data = self.files[file_index]["data"]
-        if self.get_file_data_is_compressed(file_name):
+        if self.get_file_data_is_compressed(file_name, is_by_index):
             file_data = decompress_blz(file_data)
         return file_data
 

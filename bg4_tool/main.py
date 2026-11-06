@@ -31,13 +31,21 @@ if __name__ == '__main__':
     main()
 
 
+# TODO: display file ID number next to file
 # TODO: be able to drag and drop files to reorganize and move between folders
 # TODO: be able to drop BG4 archives onto the window to import them
+# TODO: check all files during import for whether there are nested BG4 files
+#       DO NOT ALLOW THE USER TO SWAP A FOLDER FOR AN ARCHIVE IN THE PROGRAM, only deal with that semantic difference when saving and/or loading an archive from a folder on the user's pc
+#       don't bother checking for a data component for a two-file header, just display it as a nested folder
+#       if data component isn't found, disallow any data-related changing for nested files, inform the user that they need to save the parent bg4 first (at which point it'll ask the user to identify the data chunk during saving)
+#       if data is changed in any nested files, extract and import the BG4 file as a new object, change the file data in it, and export it back into the parent BG4's data
+#       file ID number should be identical to its parent in the same column, and make a new column for sub-numbers within the archive
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent):
         super(MainWindow, self).__init__()
 
         self.current_bg4_data = None
+        self.current_save_path = None
 
         menu_bar = self.menuBar()
         self.menu_bar_file = menu_bar.addMenu("file")
@@ -52,14 +60,14 @@ class MainWindow(QtWidgets.QMainWindow):
         # self.menu_bar_file_open.triggered.connect(self.new_file)
         self.menu_bar_file.addAction(self.menu_bar_file_open)
 
-        self.menu_bar_file_save = QtGui.QAction("save", self) # TODO
+        self.menu_bar_file_save = QtGui.QAction("save", self)
         self.menu_bar_file_save.setShortcut(QtGui.QKeySequence.StandardKey.Save)
-        # self.menu_bar_file_save.triggered.connect(self.new_file)
+        self.menu_bar_file_save.triggered.connect(self.save_file)
         self.menu_bar_file.addAction(self.menu_bar_file_save)
 
-        self.menu_bar_file_save_as = QtGui.QAction("save as", self) # TODO
+        self.menu_bar_file_save_as = QtGui.QAction("save as", self)
         self.menu_bar_file_save_as.setShortcut(QtGui.QKeySequence.StandardKey.SaveAs)
-        # self.menu_bar_file_save_as.triggered.connect(self.new_file)
+        self.menu_bar_file_save_as.triggered.connect(partial(self.save_file, True))
         self.menu_bar_file.addAction(self.menu_bar_file_save_as)
 
         self.menu_bar_file.addSeparator() # -----------------------------------------
@@ -112,7 +120,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toggle_checkboxes[toggle] = checkbox
 
         self.file_tree = QtWidgets.QTreeWidget()
-        self.file_tree.setColumnCount(2)
+        self.file_tree.setColumnCount(1)
         self.file_tree.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_tree.customContextMenuRequested.connect(self.tree_context_menu)
         main_layout.addWidget(self.file_tree, 3, 0)
@@ -177,6 +185,8 @@ class MainWindow(QtWidgets.QMainWindow):
             name_string, desc_string = toggles.get(key, ["", ""])
             checkbox.setText(name_string)
             checkbox.setToolTip(desc_string)
+        
+        self.file_tree.setHeaderLabels([self.tr("File Tree")])
 
     def _set_program_icons(self):
         icon_path = "img_icons_dx"
@@ -230,6 +240,54 @@ class MainWindow(QtWidgets.QMainWindow):
         self.update_name(self.tr("Untitled"))
         self.rebuild_tree_view()
 
+    def save_file(self, force_try = False):
+        # TODO: do header yamls
+        if (self.current_save_path is None) or force_try:
+            folder = self._general_select_folder(Path(self.current_bg4_name))
+            if folder is None:
+                return
+        else:
+            folder = self.current_save_path
+
+        folder_path = Path(folder)
+
+        # gather all saved file names
+        archive_file_names = self._gather_archive_file_names(self.current_bg4_data)
+
+        # ensure the directory is empty (not including ignored files), as long as it is not already either identical to the current archive, or already being worked on
+        for file in folder_path.rglob("*"):
+            relative_string = str(file.relative_to(folder_path))
+            file_is_ignored = relative_string[0] == "."
+            if self.current_save_path != folder_path and file.is_file() and not file_is_ignored and not relative_string in archive_file_names:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    #: Window Title.
+                    self.tr("Directory Not Empty"),
+                    self.tr("Please choose an empty directory to save project to."),
+                )
+                return
+
+        # write individual files
+        for i, file in enumerate(archive_file_names):
+            file_data = self.current_bg4_data.get_uncompressed_file_contents(i, is_by_index = True)
+            with open(folder_path / file, "wb") as file_path:
+                file_path.write(file_data)
+
+        self.current_save_path = folder_path
+        self.update_name(folder_path.stem)
+        self.rebuild_tree_view()
+
+    def _gather_archive_file_names(self, archive):
+        archive_file_names = []
+        for i, file in enumerate(archive.files):
+            if file["file_name"] is not None:
+                archive_file_names.append(file["file_name"])
+            elif file["name_hash"] is not None:
+                archive_file_names.append(f"(hash;{i:04X};{file["name_hash"]:08X})")
+            else:
+                archive_file_names.append(f"(index;{i:04X})")
+        return archive_file_names
+
 
 
     def update_name(self, name):
@@ -257,11 +315,16 @@ class MainWindow(QtWidgets.QMainWindow):
         if primary_file is None:
             return
 
-        self.current_bg4_data = BG4Archive()
+        self.current_bg4_data = self._import_archive_file(primary_file, path)
 
+        self.initialize_tree_view()
+        self.rebuild_tree_view()
+
+    def _import_archive_file(self, primary_file, path):
+        archive_data = BG4Archive()
         try:
-            if self.current_bg4_data.archive_uses_single_file(primary_file):
-                self.current_bg4_data.import_archive(primary_file)
+            if archive_data.archive_uses_single_file(primary_file):
+                archive_data.import_archive(primary_file)
                 self.update_name(path.stem)
             else:
                 header_name = path.stem
@@ -278,7 +341,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         self,
                         #: Window Title.
                         self.tr("Data File Needed"),
-                        self.tr("Please select the archive's Data section file."),
+                        self.tr("Please select the Data section file for archive '{0}'.").format(header_name),
                     )
 
                     secondary_file, _ = self._general_import_file()
@@ -288,13 +351,12 @@ class MainWindow(QtWidgets.QMainWindow):
                     with open(secondary_path, "rb") as file:
                         secondary_file = file.read()
 
-                self.current_bg4_data.import_archive(primary_file, secondary_file)
+                archive_data.import_archive(primary_file, secondary_file)
                 self.update_name(header_name.removesuffix("_Header"))
         except BG4ArchiveError as e:
             self._throw_error(e.error_code, str(e), e.file_indices)
         else:
-            self.initialize_tree_view()
-            self.rebuild_tree_view()
+            return archive_data
 
     def export_archive_file(self):
         path = Path("").resolve()
@@ -514,6 +576,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
         with open(path, "wb") as file:
             file.write(data)
+
+    def _general_select_folder(self, path = None):
+        if path is None:
+            path = Path("").resolve()
+
+        path = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            self.tr("Select Folder"),
+            str(path.resolve()),
+            options = QtWidgets.QFileDialog.Option.ShowDirsOnly
+        )
+
+        if path == '':
+            return
+        
+        return path
 
     def _grab_icon(self, file_path, index, icon_size):
         if index == 0:
