@@ -1,14 +1,10 @@
 import struct
 from io import BytesIO
 
-from bg4_tool.script import decompress_blz
+from bg4_tool.script import decompress_lz1x, decompress_blz
 
 # TODO: add blz compression
 def compress_blz(data):
-    return data
-
-# TODO: add lz10/lz11 decompression
-def decompress_lz1x(data):
     return data
 
 # TODO: add lz10/lz11 compression
