@@ -7,6 +7,14 @@ from bg4_tool.script import decompress_blz
 def compress_blz(data):
     return data
 
+# TODO: add lz10/lz11 decompression
+def decompress_lz1x(data):
+    return data
+
+# TODO: add lz10/lz11 compression
+def compress_lz1x(data):
+    return data
+
 class BG4ArchiveError(Exception):
     """
     Raised when an issue occurs inside the BG4Archive class.
@@ -111,6 +119,22 @@ class BG4Archive:
             hsh = (hsh * 31 + c) & 0xFFFFFFFF
         return hsh
 
+    def compress_data(self, compression_type, data):
+        match compression_type:
+            case "f": data = compress_lz1x(data)
+            case "b": data = compress_blz(data)
+            case _: pass
+
+        return data
+
+    def decompress_data(self, compression_type, data):
+        match compression_type:
+            case "f": data = decompress_lz1x(data)
+            case "b": data = decompress_blz(data)
+            case _: pass
+
+        return data
+
     def archive_uses_single_file(self, input_data):
         self._get_archive_header(input_data)
         return self.properties[self.single_file_keyword]
@@ -141,8 +165,8 @@ class BG4Archive:
                 data_offset, data_length, name_hash = struct.unpack("<III", in_data.read(entry_size))
                 name_offset = None
 
-            # TODO: implement other compression types
-            is_compressed = (data_offset & 0x80000000) != 0
+            compression_value = (data_offset & 0xC0000000) >> 30
+            compression_type = {1: "f", 2: "b"}.get(compression_value)
             data_offset &= 0x3FFFFFFF
 
             is_invalid = ((data_length & 0x80000000) != 0) or ((data_offset & 0xC0000000) == 0xC0000000)
@@ -164,7 +188,7 @@ class BG4Archive:
             in_data_sub.seek(data_offset)
             file_data = in_data_sub.read(data_length)
 
-            file = {"file_name": file_name, "name_hash": name_hash if file_name is None else None, "is_compressed": is_compressed, "data": file_data, "data_is_compressed": is_compressed}
+            file = {"file_name": file_name, "name_hash": name_hash if file_name is None else None, "compression_type": compression_type, "data": file_data, "data_compression_type": compression_type}
             # TODO: have this pull from the archive's index table if it has one, catch any exceptions that may raise with error code 103
             name_sorting[data_offset] = file
 
@@ -210,20 +234,18 @@ class BG4Archive:
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
         self._check_file_index(file_index)
 
-        is_compressed = False
+        compression_type = None
         # TODO: check whether to compress
-        self.files[file_index]["is_compressed"] = is_compressed
-        self.files[file_index]["data_is_compressed"] = is_compressed
+        self.files[file_index]["compression_type"] = compression_type
+        self.files[file_index]["data_compression_type"] = compression_type
         self.files[file_index]["data"] = file_data
 
     def get_uncompressed_file_contents(self, file_name, is_by_index = False):
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
         self._check_file_index(file_index)
 
-        file_data = self.files[file_index]["data"]
-        if self.get_file_data_is_compressed(file_name, is_by_index):
-            file_data = decompress_blz(file_data)
-        return file_data
+        compression_type = self.get_file_data_compression_type(file_name, is_by_index)
+        return self.decompress_data(compression_type, self.files[file_index]["data"])
 
     def get_file_contents(self, file_name, is_by_index = False):
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
@@ -235,13 +257,25 @@ class BG4Archive:
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
         self._check_file_index(file_index)
 
-        return self.files[file_index]["is_compressed"]
+        return self.files[file_index]["compression_type"] != None
+
+    def get_file_compression_type(self, file_name, is_by_index = False):
+        file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
+        self._check_file_index(file_index)
+
+        return self.files[file_index]["compression_type"]
 
     def get_file_data_is_compressed(self, file_name, is_by_index = False):
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
         self._check_file_index(file_index)
 
-        return self.files[file_index]["data_is_compressed"]
+        return self.files[file_index]["data_compression_type"] != None
+
+    def get_file_data_compression_type(self, file_name, is_by_index = False):
+        file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
+        self._check_file_index(file_index)
+
+        return self.files[file_index]["data_compression_type"]
 
     # TODO: let the user restore names to files that only have a hash or index
 
@@ -303,9 +337,8 @@ class BG4Archive:
         data_section = bytearray()
 
         for file_index, file in enumerate(self.files):
-            name_or_hash = file["name_hash"] if file["file_name"] is None else file["file_name"]
             files[file_index]["file_index"] = file_index
-            data = self.get_file_contents(name_or_hash)
+            data = self.get_file_contents(file_index, is_by_index = True)
 
             offset = len(data_section)
             if self.properties[self.single_file_keyword]:
@@ -315,15 +348,16 @@ class BG4Archive:
             if data_offset != (data_offset & 0x3FFFFFFF):
                 raise BG4ArchiveError(203)
             files[file_index]["data_offset"] = data_offset
-            if self.get_file_is_compressed(name_or_hash):
-                files[file_index]["data_offset"] |= 0x80000000
 
-            data_is_compressed = self.get_file_data_is_compressed(name_or_hash)
-            is_compressed = self.get_file_is_compressed(name_or_hash)
-            if (not data_is_compressed) and (is_compressed):
-                data = compress_blz(data)
-            elif (data_is_compressed) and (not is_compressed):
-                data = decompress_blz(data)
+            data_compression_type = self.get_file_data_compression_type(file_index, is_by_index = True)
+            compression_type = self.get_file_compression_type(file_index, is_by_index = True)
+            if compression_type != data_compression_type:
+                data = self.decompress_data(data_compression_type, data)
+                data = self.compress_data(compression_type, data)
+
+            if self.get_file_is_compressed(file_index, is_by_index = True):
+                compression_type = [None, "f", "b"].index(compression_type)
+                files[file_index]["data_offset"] |= (compression_type << 30)
 
             data_length = len(data)
             if data_length != (data_length & 0x3FFFFFFF):

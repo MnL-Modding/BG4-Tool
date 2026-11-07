@@ -301,7 +301,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_bg4_name = name
         self._update_window_title()
 
-    # TODO: keep track of what was actually changed so the whole thing doesn't need to be saved every time
+    # TODO: keep track of what was actually changed so the whole thing doesn't need to be saved every time (that includes file order changes for (index) files, and name updates for (hash) files)
     def _update_saved(self, saved):
         self.current_bg4_saved = saved
         self._update_window_title()
