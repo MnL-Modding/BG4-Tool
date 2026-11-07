@@ -53,7 +53,10 @@ def decompress_lz1x(data):
             read_pointer += instruction_key
             write_pointer += length
 
-    return out_data[:decompressed_len]
+            if write_pointer >= decompressed_len:
+                break
+
+    return out_data
 
 def decompress_blz(data):
     data = bytearray(data)
