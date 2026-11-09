@@ -1,5 +1,4 @@
 import struct
-from io import BytesIO
 
 from bg4_tool.script import decompress_lz1x, decompress_blz
 
@@ -33,6 +32,7 @@ class BinGluError(Exception):
     Code 302: Requested file name does not exist.
     Code 303: Requested file index does not exist in file list.
     Code 304: Requested version is not supported.
+    Code 305: This archive does not support being accessed via index.
     """
     def __init__(self, error_code, file_indices = []):
         message = {
@@ -54,6 +54,7 @@ class BinGluError(Exception):
             302: "Access Error: Bad File Name",
             303: "Access Error: File Does Not Exist",
             304: "Access Error: Unsupported Version",
+            305: "Access Error: Indexed Access Not Supported"
         }.get(error_code, f"Error Code {error_code} Not Implemented")
         super().__init__(message)
         self.error_code = error_code
@@ -69,9 +70,45 @@ class BinGluArchive:
     preserve_order_keyword = "preserve_order"
 
     @staticmethod
+    def get_archive_header(input_data):
+        magic = input_data[:4]
+        if magic != BinGluArchive.header_magic:
+            raise BinGluError(101)
+        
+        properties_raw, entry_count, _header_length, bucket_count, bucket_size = struct.unpack("<HHIHH", input_data[4:16])
+
+        properties = {}
+        properties[BinGluArchive.version_keyword] = properties_raw & 0x00FF
+
+        properties[BinGluArchive.single_file_keyword]    = (properties_raw & 0x0100) != 0
+        properties[BinGluArchive.preserve_order_keyword] = (properties_raw & 0x0200) != 0
+
+        if entry_count != (bucket_count * bucket_size) and properties[BinGluArchive.version_keyword] == 4:
+            raise BinGluError(101)
+
+        return properties, bucket_count, bucket_size, entry_count
+
+    @staticmethod
+    def get_archive_version(input_data):
+        properties, _, _, _ = BinGluArchive.get_archive_header(input_data)
+        return properties[BinGluArchive.version_keyword]
+
+    @staticmethod
+    def archive_uses_single_file(input_data):
+        properties, _, _, _ = BinGluArchive.get_archive_header(input_data)
+        return properties[BinGluArchive.single_file_keyword]
+
+    @staticmethod
+    def archive_uses_index_table(input_data):
+        properties, _, _, _ = BinGluArchive.get_archive_header(input_data)
+        return properties[BinGluArchive.preserve_order_keyword]
+
+    @staticmethod
     def get_name_hash(name):
-        if name is None:
+        if name is None or not isinstance(name, str):
             return None
+
+        name = name.encode("ascii")
 
         hsh = 0
         for c in reversed(name):
@@ -97,31 +134,72 @@ class BinGluArchive:
 
         return data
 
+    # TODO: binary search
     @staticmethod
-    def get_archive_header(input_data):
-        in_data = BytesIO(input_data)
-        magic = in_data.read(4)
-
-        if magic != BinGluArchive.header_magic:
-            raise BinGluError(101)
-        
-        properties_raw, entry_count, _header_length, bucket_count, bucket_size = struct.unpack("<HHIHH", in_data.read(12))
-
-        properties = {}
-        properties[BinGluArchive.version_keyword] = properties_raw & 0x00FF
-
-        properties[BinGluArchive.single_file_keyword]    = (properties_raw & 0x0100) != 0
-        properties[BinGluArchive.preserve_order_keyword] = (properties_raw & 0x0200) != 0
-
-        if entry_count != (bucket_count * bucket_size) and properties[BinGluArchive.version_keyword] == 4:
-            raise BinGluError(101)
-
-        return properties, bucket_count, bucket_size, entry_count
+    def get_file_entry_by_name(input_data, file_name):
+        version = input_data[4]
+        _, bucket_count, bucket_size, entry_count = BinGluArchive.get_archive_header(input_data)
+        entry_size = 14 if version > 3 else 12
 
     @staticmethod
-    def archive_uses_single_file(input_data):
-        properties, bucket_count, bucket_size, entry_count = BinGluArchive.get_archive_header(input_data)
-        return properties[BinGluArchive.single_file_keyword]
+    def get_file_entry_by_index(input_data, file_index):
+        return _file_index_table_access(input_data, file_index, 1)
+
+    @staticmethod
+    def get_file_index_by_entry(input_data, file_entry):
+        return _file_index_table_access(input_data, file_entry, 0)
+
+    @staticmethod
+    def _file_index_table_access(input_data, table_index, table_value):
+        if not BinGluArchive.archive_uses_index_table(input_data):
+            raise BinGluError(305)
+
+        version = input_data[4]
+        entry_count = int.from_bytes(input_data[6:8], 'little')
+        entry_size = 14 if version > 3 else 12
+
+        index_table_offset = 16 + (entry_count * entry_size)
+        file_index_offset = index_table_offset + [0, 2][table_value] + (file_entry * 4)
+
+        return int.from_bytes(input_data[file_index_offset : file_index_offset + 2], 'little')
+
+    @staticmethod
+    def get_file_entry_data(input_data, file_entry):
+        version = input_data[4]
+        entry_count = int.from_bytes(input_data[6:8], 'little')
+        entry_struct, entry_size = ("<IIIH", 14) if version > 3 else ("<III", 12)
+
+        if file_entry >= entry_count or file_entry < 0:
+            raise BinGluError(303)
+
+        entry_offset = 16 + (file_entry * entry_size)
+        raw_data = struct.unpack(entry_struct, input_data[entry_offset : entry_offset + entry_size])
+        data_offset, data_length, name_hash, name_offset = raw_data + (None,) if len(raw_data) == 3 else raw_data
+
+        compression_value = (data_offset & 0xC0000000) >> 30
+        compression_type = {1: "f", 2: "b"}.get(compression_value)
+        data_offset &= 0x3FFFFFFF
+
+        is_invalid = ((data_length & 0x80000000) != 0) or ((data_offset & 0xC0000000) == 0xC0000000)
+        data_length &= 0x3FFFFFFF
+
+        if is_invalid:
+            return None
+
+        if name_offset is not None:
+            name_section_offset = 16 + (entry_count * entry_size)
+            read_pointer = name_section_offset + name_offset
+            file_name = ""
+            while(True):
+                next_char = input_data[read_pointer : read_pointer + 1]
+                if next_char == b'\0':
+                    break
+                file_name += next_char.decode("ascii")
+                read_pointer += 1
+        else:
+            file_name = None
+
+        return file_name, name_hash, compression_type, data_offset, data_length
 
     def __init__(self):
         # hi   ------>   lo
@@ -146,59 +224,27 @@ class BinGluArchive:
         self.bucket_count = bucket_count
         self.bucket_size = bucket_size
 
-        in_data = BytesIO(input_data)
-
-        in_data_sub = in_data
         if not self.properties[self.single_file_keyword]:
             if input_data_sub is None:
                 raise BinGluError(102)
-            in_data_sub = BytesIO(input_data_sub)
+        else:
+            input_data_sub = input_data
 
-        name_sorting = {}
-
-        entry_size = 12
-        if self.properties[self.version_keyword] > 3:
-            entry_size = 14
-
-        name_section_offset = 16 + (entry_count * entry_size)
+        file_sorting = {}
         for i in range(entry_count):
-            in_data.seek(16 + (i * entry_size))
+            entry_data = self.get_file_entry_data(input_data, i)
+            if entry_data is None:
+                continue
 
-            if self.properties[self.version_keyword] > 3:
-                data_offset, data_length, name_hash, name_offset = struct.unpack("<IIIH", in_data.read(entry_size))
-            else:
-                data_offset, data_length, name_hash = struct.unpack("<III", in_data.read(entry_size))
-                name_offset = None
-
-            compression_value = (data_offset & 0xC0000000) >> 30
-            compression_type = {1: "f", 2: "b"}.get(compression_value)
-            data_offset &= 0x3FFFFFFF
-
-            is_invalid = ((data_length & 0x80000000) != 0) or ((data_offset & 0xC0000000) == 0xC0000000)
-            data_length &= 0x3FFFFFFF
-
-            if is_invalid: continue
-
-            if name_offset is not None:
-                in_data.seek(name_section_offset + name_offset)
-                file_name = ""
-                while(True):
-                    next_char = in_data.read(1)
-                    if next_char == b'\0':
-                        break
-                    file_name += next_char.decode("ascii")
-            else:
-                file_name = None
-
-            in_data_sub.seek(data_offset)
-            file_data = in_data_sub.read(data_length)
+            file_name, name_hash, compression_type, data_offset, data_length = entry_data
+            file_data = input_data_sub[data_offset : data_offset + data_length]
 
             file = {"file_name": file_name, "name_hash": name_hash if file_name is None else None, "compression_type": compression_type, "data": file_data, "data_compression_type": compression_type}
             # TODO: have this pull from the archive's index table if it has one, catch any exceptions that may raise with error code 103
-            name_sorting[data_offset] = file
+            file_sorting[data_offset] = file
 
-        for offset in sorted(name_sorting.keys()):
-            self.files.append(name_sorting[offset])
+        for offset in sorted(file_sorting.keys()):
+            self.files.append(file_sorting[offset])
 
     def _check_file_index(self, file_index):
         try:
@@ -308,11 +354,7 @@ class BinGluArchive:
 
         for file_index, file in enumerate(self.files):
             name = file["file_name"]
-            encoded_name = None
-            if name is not None:
-                encoded_name = name.encode("ascii")
-
-            hsh = self.get_name_hash(encoded_name) if file["name_hash"] is None else file["name_hash"]
+            hsh = self.get_name_hash(name) if file["name_hash"] is None else file["name_hash"]
             if hsh is None:
                 raise BinGluError(206, [file_index])
 
@@ -328,9 +370,7 @@ class BinGluArchive:
                     raise BinGluError(205, [file_index])
                 name_section.extend(encoded_name + b'\0')
 
-        entry_size = 12
-        if self.properties[self.version_keyword] > 3:
-            entry_size = 14
+        entry_size = 14 if self.properties[self.version_keyword] > 3 else 12
 
         header_length = 16 + (entry_size * entry_count) + len(name_section)
         if self.properties[self.preserve_order_keyword]: header_length += entry_count * 4
