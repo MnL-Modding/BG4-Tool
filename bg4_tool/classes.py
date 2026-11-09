@@ -11,9 +11,9 @@ def compress_blz(data):
 def compress_lz1x(data):
     return data
 
-class BG4ArchiveError(Exception):
+class BinGluError(Exception):
     """
-    Raised when an issue occurs inside the BG4Archive class.
+    Raised when an issue occurs inside the BinGluArchive class.
 
     Code 100: Fallback import error.
     Code 101: The header was found to be corrupted during import.
@@ -22,11 +22,11 @@ class BG4ArchiveError(Exception):
 
     Code 200: Fallback export error.
     Code 201: Buckets were found to be too small when trying to export.
-    Code 202: Exported BG4 version does not support dealing with hash collisions.
+    Code 202: Exported BinGlu version does not support dealing with hash collisions.
     Code 203: A file was given an offset value too large for the format. This usually means the archive is too large.
     Code 204: A file was given an length value too large for the format. This usually means the file is too large for the archive.
-    Code 205: A file was found to not have an associated name, which is required in this BG4 version.
-    Code 206: A file was found to not have an associated name hash, which is required in this BG4 version.
+    Code 205: A file was found to not have an associated name, which is required in this BinGlu version.
+    Code 206: A file was found to not have an associated name hash, which is required in this BinGlu version.
 
     Code 300: Fallback access error.
     Code 301: Requested header property does not exist.
@@ -59,7 +59,7 @@ class BG4ArchiveError(Exception):
         self.error_code = error_code
         self.file_indices = file_indices
 
-class BG4Archive:
+class BinGluArchive:
     header_magic = b"BG4\0"
     invalid_name = "(invalid)"
     supported_versions = [3, 4, 5]
@@ -102,26 +102,26 @@ class BG4Archive:
         in_data = BytesIO(input_data)
         magic = in_data.read(4)
 
-        if magic != BG4Archive.header_magic:
-            raise BG4ArchiveError(101)
+        if magic != BinGluArchive.header_magic:
+            raise BinGluError(101)
         
         properties_raw, entry_count, _header_length, bucket_count, bucket_size = struct.unpack("<HHIHH", in_data.read(12))
 
         properties = {}
-        properties[BG4Archive.version_keyword] = properties_raw & 0x00FF
+        properties[BinGluArchive.version_keyword] = properties_raw & 0x00FF
 
-        properties[BG4Archive.single_file_keyword]    = (properties_raw & 0x0100) != 0
-        properties[BG4Archive.preserve_order_keyword] = (properties_raw & 0x0200) != 0
+        properties[BinGluArchive.single_file_keyword]    = (properties_raw & 0x0100) != 0
+        properties[BinGluArchive.preserve_order_keyword] = (properties_raw & 0x0200) != 0
 
-        if entry_count != (bucket_count * bucket_size) and properties[BG4Archive.version_keyword] == 4:
-            raise BG4ArchiveError(101)
+        if entry_count != (bucket_count * bucket_size) and properties[BinGluArchive.version_keyword] == 4:
+            raise BinGluError(101)
 
         return properties, bucket_count, bucket_size, entry_count
 
     @staticmethod
     def archive_uses_single_file(input_data):
-        properties, bucket_count, bucket_size, entry_count = BG4Archive.get_archive_header(input_data)
-        return properties[BG4Archive.single_file_keyword]
+        properties, bucket_count, bucket_size, entry_count = BinGluArchive.get_archive_header(input_data)
+        return properties[BinGluArchive.single_file_keyword]
 
     def __init__(self):
         # hi   ------>   lo
@@ -151,7 +151,7 @@ class BG4Archive:
         in_data_sub = in_data
         if not self.properties[self.single_file_keyword]:
             if input_data_sub is None:
-                raise BG4ArchiveError(102)
+                raise BinGluError(102)
             in_data_sub = BytesIO(input_data_sub)
 
         name_sorting = {}
@@ -204,7 +204,7 @@ class BG4Archive:
         try:
             self.files[file_index]
         except IndexError:
-            raise BG4ArchiveError(303)
+            raise BinGluError(303)
 
     def get_file_id_by_name_or_hash(self, file_name):
         if isinstance(file_name, str):
@@ -215,19 +215,19 @@ class BG4Archive:
             return None
 
         if file_name not in list_to_check:
-            raise BG4ArchiveError(302)
+            raise BinGluError(302)
         return list_to_check.index(file_name)
 
     def set_property(self, set_property, value):
         if set_property not in self.properties:
-            raise BG4ArchiveError(301)
+            raise BinGluError(301)
         if set_property == self.version_keyword and value not in self.supported_versions:
-            raise BG4ArchiveError(304)
+            raise BinGluError(304)
         self.properties[set_property] = value
 
     def get_property(self, get_property):
         if get_property not in self.properties:
-            raise BG4ArchiveError(301)
+            raise BinGluError(301)
         return self.properties[get_property]
 
     def new_file(self, file_name, file_data):
@@ -314,18 +314,18 @@ class BG4Archive:
 
             hsh = self.get_name_hash(encoded_name) if file["name_hash"] is None else file["name_hash"]
             if hsh is None:
-                raise BG4ArchiveError(206, [file_index])
+                raise BinGluError(206, [file_index])
 
             if hsh in hash_dict.keys():
                 if not self.properties[self.version_keyword] > 3:
-                    raise BG4ArchiveError(202, [hash_dict[hsh], file_index])
+                    raise BinGluError(202, [hash_dict[hsh], file_index])
                 hash_collisions.add(hsh)
             hash_dict[hsh] = file_index
 
             files[file_index] = {"name_offset": len(name_section), "name_hash": hsh}
             if self.properties[self.version_keyword] > 3:
                 if name is None:
-                    raise BG4ArchiveError(205, [file_index])
+                    raise BinGluError(205, [file_index])
                 name_section.extend(encoded_name + b'\0')
 
         entry_size = 12
@@ -351,7 +351,7 @@ class BG4Archive:
 
             data_offset = offset
             if data_offset != (data_offset & 0x3FFFFFFF):
-                raise BG4ArchiveError(203)
+                raise BinGluError(203)
             files[file_index]["data_offset"] = data_offset
 
             data_compression_type = self.get_file_data_compression_type(file_index, is_by_index = True)
@@ -366,7 +366,7 @@ class BG4Archive:
 
             data_length = len(data)
             if data_length != (data_length & 0x3FFFFFFF):
-                raise BG4ArchiveError(204, [file_index])
+                raise BinGluError(204, [file_index])
             files[file_index]["data_length"] = data_length
             data_section.extend(data)
             if files[file_index]["name_hash"] in hash_collisions:
@@ -387,7 +387,7 @@ class BG4Archive:
             buckets[bucket_id].append(file)
 
             if len(buckets[bucket_id]) > bucket_size:
-                raise BG4ArchiveError(201)
+                raise BinGluError(201)
 
         invalid_file = {"name_offset": 0, "name_hash": 0xFFFFFFFF, "data_offset": 0, "data_length": 0x80000000, "file_index": None}
         order_table = []

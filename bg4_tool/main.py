@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from bg4_tool.classes import BG4Archive, BG4ArchiveError
+from bg4_tool.classes import BinGluArchive, BinGluError
 from bg4_tool.constants import *
 
 
@@ -33,22 +33,22 @@ if __name__ == '__main__':
 
 # TODO: display file ID number next to file
 # TODO: be able to drag and drop files to reorganize and move between folders
-# TODO: be able to drop BG4 archives onto the window to import them
-# TODO: check all files during import for whether there are nested BG4 files
+# TODO: be able to drop archives onto the window to import them
+# TODO: check all files during import for whether there are nested archive files
 #       DO NOT ALLOW THE USER TO SWAP A FOLDER FOR AN ARCHIVE IN THE PROGRAM, only deal with that semantic difference when saving and/or loading an archive from a folder on the user's pc
 #       don't bother checking for a data component for a two-file header, just display it as a nested folder
-#       if data component isn't found, disallow any data-related changing for nested files, inform the user that they need to save the parent bg4 first (at which point it'll ask the user to identify the data chunk during saving)
-#       if data is changed in any nested files, extract and import the BG4 file as a new object, change the file data in it, and export it back into the parent BG4's data
+#       if data component isn't found, disallow any data-related changing for nested files, inform the user that they need to save the parent archive first (at which point it'll ask the user to identify the data chunk during saving)
+#       if data is changed in any nested files, extract and import the archive file as a new object, change the file data in it, and export it back into the parent archive's data
 #       file ID number should be identical to its parent in the same column, and make a new column for sub-numbers within the archive
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent):
         super(MainWindow, self).__init__()
 
-        self.current_bg4_data = None
+        self.current_binglu_data = None
         self.current_save_path = None
 
-        self.current_bg4_name = ""
-        self.current_bg4_saved = True
+        self.current_binglu_name = ""
+        self.current_binglu_saved = True
 
         self._update_window_title()
 
@@ -100,7 +100,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.version_selector_text = QtWidgets.QLabel()
         self.version_selector = QtWidgets.QComboBox()
-        self.version_selector.addItems([str(i) for i in BG4Archive.supported_versions])
+        self.version_selector.addItems([str(i) for i in BinGluArchive.supported_versions])
         self.version_selector.currentIndexChanged.connect(self.set_version)
         main_layout.addWidget(self.version_selector_text, 0, 0)
         main_layout.addWidget(self.version_selector, 1, 0)
@@ -111,8 +111,8 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout.addWidget(checkboxes, 2, 0)
 
         toggles = [
-            BG4Archive.single_file_keyword,
-            BG4Archive.preserve_order_keyword,
+            BinGluArchive.single_file_keyword,
+            BinGluArchive.preserve_order_keyword,
         ]
 
         self.toggle_checkboxes = {}
@@ -170,17 +170,17 @@ class MainWindow(QtWidgets.QMainWindow):
             ],
         }
 
-        for i, version in enumerate(BG4Archive.supported_versions):
+        for i, version in enumerate(BinGluArchive.supported_versions):
             name_string, desc_string = versions[version]
             self.version_selector.setItemText(i, self.tr("Version {0}: {1}").format(version, name_string))
             self.version_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
 
         toggles = {
-            BG4Archive.single_file_keyword: [
+            BinGluArchive.single_file_keyword: [
                 self.tr("Export Single File"),
                 self.tr("Disabling this will split the archive into a '_Header' file and a '_Data' file. Lowers RAM overhead for extremely large archives."),
             ],
-            BG4Archive.preserve_order_keyword: [
+            BinGluArchive.preserve_order_keyword: [
                 self.tr("Preserve File Order"),
                 self.tr("Creates an additional table that tracks the index of each file in the archive. Necessary for archives that can use an index to find a file."),
             ],
@@ -240,7 +240,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     def new_file(self):
-        self.current_bg4_data = BG4Archive()
+        self.current_binglu_data = BinGluArchive()
         #: Name for a newly created archive.
         self._update_name(self.tr("Untitled"))
         self._update_saved(True)
@@ -249,7 +249,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def save_file(self, force_try = False):
         # TODO: do header yamls
         if (self.current_save_path is None) or force_try:
-            folder = self._general_select_folder(Path(self.current_bg4_name))
+            folder = self._general_select_folder(Path(self.current_binglu_name))
             if folder is None:
                 return
         else:
@@ -258,7 +258,7 @@ class MainWindow(QtWidgets.QMainWindow):
         folder_path = Path(folder)
 
         # gather all saved file names
-        archive_file_names = self._gather_archive_file_names(self.current_bg4_data)
+        archive_file_names = self._gather_archive_file_names(self.current_binglu_data)
 
         # ensure the directory is empty (not including ignored files), as long as it is not already either identical to the current archive, or already being worked on
         for file in folder_path.rglob("*"):
@@ -275,7 +275,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # write individual files
         for i, file in enumerate(archive_file_names):
-            file_data = self.current_bg4_data.get_uncompressed_file_contents(i, is_by_index = True)
+            file_data = self.current_binglu_data.get_uncompressed_file_contents(i, is_by_index = True)
             with open(folder_path / file, "wb") as file_path:
                 file_path.write(file_data)
 
@@ -298,29 +298,29 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     def _update_name(self, name):
-        self.current_bg4_name = name
+        self.current_binglu_name = name
         self._update_window_title()
 
     # TODO: keep track of what was actually changed so the whole thing doesn't need to be saved every time (that includes file order changes for (index) files, and name updates for (hash) files)
     def _update_saved(self, saved):
-        self.current_bg4_saved = saved
+        self.current_binglu_saved = saved
         self._update_window_title()
 
     def _update_window_title(self):
-        name = self.current_bg4_name
-        if not self.current_bg4_saved:
+        name = self.current_binglu_name
+        if not self.current_binglu_saved:
             name += "*"
         self.setWindowTitle(name)
 
     def set_version(self, version_index):
-        set_property = BG4Archive.version_keyword
-        version = BG4Archive.supported_versions[version_index]
-        self.current_bg4_data.set_property(set_property, version)
+        set_property = BinGluArchive.version_keyword
+        version = BinGluArchive.supported_versions[version_index]
+        self.current_binglu_data.set_property(set_property, version)
         self._update_saved(False)
 
     def toggle_property(self, set_property):
         checked = self.toggle_checkboxes[set_property].isChecked()
-        self.current_bg4_data.set_property(set_property, checked)
+        self.current_binglu_data.set_property(set_property, checked)
         self._update_saved(False)
 
     def import_archive_file(self):
@@ -335,7 +335,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if primary_file is None:
             return
 
-        self.current_bg4_data, name = self._import_archive_file(primary_file, path)
+        self.current_binglu_data, name = self._import_archive_file(primary_file, path)
         self._update_name(name)
 
         self.current_save_path = None
@@ -344,7 +344,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.rebuild_tree_view()
 
     def _import_archive_file(self, primary_file, path):
-        archive_data = BG4Archive()
+        archive_data = BinGluArchive()
         try:
             if archive_data.archive_uses_single_file(primary_file):
                 archive_data.import_archive(primary_file)
@@ -376,7 +376,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 archive_data.import_archive(primary_file, secondary_file)
                 archive_name = header_name.removesuffix("_Header")
-        except BG4ArchiveError as e:
+        except BinGluError as e:
             self._throw_error(e.error_code, str(e), e.file_indices)
         else:
             return archive_data, archive_name
@@ -384,8 +384,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def export_archive_file(self):
         path = Path("").resolve()
 
-        key = BG4Archive.version_keyword
-        version = self.current_bg4_data.get_property(key)
+        key = BinGluArchive.version_keyword
+        version = self.current_binglu_data.get_property(key)
         warning = None
         match version:
             case 3:
@@ -403,15 +403,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self,
             #: Window title.
             self.tr("Export File"),
-            f"{path}/{self.current_bg4_name}.dat",
+            f"{path}/{self.current_binglu_name}.dat",
         )
 
         if path == '':
             return
 
         try:
-            main_file, sub_file = self.current_bg4_data.export_archive()
-        except BG4ArchiveError as e:
+            main_file, sub_file = self.current_binglu_data.export_archive()
+        except BinGluError as e:
             self._throw_error(e.error_code, str(e), e.file_indices)
         else:
             if sub_file is None:
@@ -429,7 +429,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self,
                 #: Window Title.
                 self.tr("Export Successful"),
-                self.tr("{0} has been successfully exported!").format(self.current_bg4_name),
+                self.tr("{0} has been successfully exported!").format(self.current_binglu_name),
             )
 
 
@@ -454,18 +454,18 @@ class MainWindow(QtWidgets.QMainWindow):
             data, _ = self._general_import_file()
             if data is None:
                 return
-            self.current_bg4_data.set_file_data(item_name, data)
+            self.current_binglu_data.set_file_data(item_name, data)
             self._update_saved(True)
 
         def extract_file(item_name):
-            data = self.current_bg4_data.get_uncompressed_file_contents(item_name)
+            data = self.current_binglu_data.get_uncompressed_file_contents(item_name)
             self._general_export_file(item_name, data)
 
         action_replace_file = QtGui.QAction(self.tr("Replace File Contents"), self)
         action_replace_file.triggered.connect(replace_file)
         menu.addAction(action_replace_file)
 
-        if self.current_bg4_data.get_file_is_compressed(item_name):
+        if self.current_binglu_data.get_file_is_compressed(item_name):
             string = self.tr("Decompress and Extract")
         else:
             string = self.tr("Extract File Contents")
@@ -484,20 +484,20 @@ class MainWindow(QtWidgets.QMainWindow):
         top_parent.item_type = "top"
 
     def rebuild_tree_view(self):
-        key = BG4Archive.version_keyword
-        version = self.current_bg4_data.get_property(key)
-        version_index = BG4Archive.supported_versions.index(version)
+        key = BinGluArchive.version_keyword
+        version = self.current_binglu_data.get_property(key)
+        version_index = BinGluArchive.supported_versions.index(version)
 
         self.version_selector.blockSignals(True)
         self.version_selector.setCurrentIndex(version_index)
         self.version_selector.blockSignals(False)
 
         for key, checkbox in self.toggle_checkboxes.items():
-            toggle_state = self.current_bg4_data.get_property(key)
+            toggle_state = self.current_binglu_data.get_property(key)
             checkbox.setChecked(toggle_state)
 
         top_parent = self.file_tree.topLevelItem(0)
-        files = self.current_bg4_data.files.copy()
+        files = self.current_binglu_data.files.copy()
         for i, file_data in enumerate(files):
             file = file_data["name_hash"] if file_data["file_name"] is None else file_data["file_name"]
             directory = file.split('/') if isinstance(file, str) else [str(file)]
@@ -536,10 +536,10 @@ class MainWindow(QtWidgets.QMainWindow):
             name = item.full_item_name
             content = [name.split('/')[-1]] if isinstance(name, str) else [str(name)]
             if name == "":
-                content[0] = self.current_bg4_name
+                content[0] = self.current_binglu_name
 
             if item.item_type == "file":
-                index = self.current_bg4_data.get_file_id_by_name_or_hash(name)
+                index = self.current_binglu_data.get_file_id_by_name_or_hash(name)
                 content.append(str(index))
 
             self.file_tree.blockSignals(True)
@@ -549,7 +549,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 case "folder":
                     item.setIcon(0, self.icons["folder"])
                 case "file":
-                    if self.current_bg4_data.get_file_is_compressed(name):
+                    if self.current_binglu_data.get_file_is_compressed(name):
                         item.setIcon(0, self.icons["blz"])
                     else:
                         item.setIcon(0, self.icons["file"])
