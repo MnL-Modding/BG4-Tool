@@ -68,7 +68,7 @@ class BG4Archive:
     single_file_keyword = "single_file"
     preserve_order_keyword = "preserve_order"
 
-
+    @staticmethod
     def get_name_hash(name):
         if name is None:
             return None
@@ -79,6 +79,7 @@ class BG4Archive:
         return hsh
 
     # TODO: add subtype
+    @staticmethod
     def compress_data(compression_type, data):
         match compression_type:
             case "f": data = compress_lz1x(data)
@@ -87,6 +88,7 @@ class BG4Archive:
 
         return data
 
+    @staticmethod
     def decompress_data(compression_type, data):
         match compression_type:
             case "f": data = decompress_lz1x(data)
@@ -94,7 +96,6 @@ class BG4Archive:
             case _: pass
 
         return data
-
 
     def __init__(self):
         # hi   ------>   lo
@@ -244,7 +245,7 @@ class BG4Archive:
         self._check_file_index(file_index)
 
         compression_type = self.get_file_data_compression_type(file_name, is_by_index)
-        return BG4Archive.decompress_data(compression_type, self.files[file_index]["data"])
+        return self.decompress_data(compression_type, self.files[file_index]["data"])
 
     def get_file_contents(self, file_name, is_by_index = False):
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
@@ -306,7 +307,7 @@ class BG4Archive:
             if name is not None:
                 encoded_name = name.encode("ascii")
 
-            hsh = BG4Archive.get_name_hash(encoded_name) if file["name_hash"] is None else file["name_hash"]
+            hsh = self.get_name_hash(encoded_name) if file["name_hash"] is None else file["name_hash"]
             if hsh is None:
                 raise BG4ArchiveError(206, [file_index])
 
@@ -351,8 +352,8 @@ class BG4Archive:
             data_compression_type = self.get_file_data_compression_type(file_index, is_by_index = True)
             compression_type = self.get_file_compression_type(file_index, is_by_index = True)
             if compression_type != data_compression_type:
-                data = BG4Archive.decompress_data(data_compression_type, data)
-                data = BG4Archive.compress_data(compression_type, data)
+                data = self.decompress_data(data_compression_type, data)
+                data = self.compress_data(compression_type, data)
 
             if self.get_file_is_compressed(file_index, is_by_index = True):
                 compression_type = [None, "f", "b"].index(compression_type)
