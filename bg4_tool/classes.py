@@ -97,6 +97,32 @@ class BG4Archive:
 
         return data
 
+    @staticmethod
+    def get_archive_header(input_data):
+        in_data = BytesIO(input_data)
+        magic = in_data.read(4)
+
+        if magic != BG4Archive.header_magic:
+            raise BG4ArchiveError(101)
+        
+        properties_raw, entry_count, _header_length, bucket_count, bucket_size = struct.unpack("<HHIHH", in_data.read(12))
+
+        properties = {}
+        properties[BG4Archive.version_keyword] = properties_raw & 0x00FF
+
+        properties[BG4Archive.single_file_keyword]    = (properties_raw & 0x0100) != 0
+        properties[BG4Archive.preserve_order_keyword] = (properties_raw & 0x0200) != 0
+
+        if entry_count != (bucket_count * bucket_size) and properties[BG4Archive.version_keyword] == 4:
+            raise BG4ArchiveError(101)
+
+        return properties, bucket_count, bucket_size, entry_count
+
+    @staticmethod
+    def archive_uses_single_file(input_data):
+        properties, bucket_count, bucket_size, entry_count = BG4Archive.get_archive_header(input_data)
+        return properties[BG4Archive.single_file_keyword]
+
     def __init__(self):
         # hi   ------>   lo
         # xxxxxxPS VVVVVVVV
@@ -112,35 +138,14 @@ class BG4Archive:
 
         self.files = []
 
-    def _get_archive_header(self, input_data):
-        in_data = BytesIO(input_data)
-        magic = in_data.read(4)
+    def import_archive(self, input_data, input_data_sub = None):
+        properties, bucket_count, bucket_size, entry_count = self.get_archive_header(input_data)
 
-        if magic != self.header_magic:
-            raise BG4ArchiveError(101)
-        
-        properties, entry_count, header_length, bucket_count, bucket_size = struct.unpack("<HHIHH", in_data.read(12))
-
-        self.properties[self.version_keyword] = properties & 0x00FF
-
-        self.properties[self.single_file_keyword]    = (properties & 0x0100) != 0
-        self.properties[self.preserve_order_keyword] = (properties & 0x0200) != 0
-
-        if entry_count != (bucket_count * bucket_size) and self.properties[self.version_keyword] == 4:
-            raise BG4ArchiveError(101)
-
+        self.properties = properties
         # TODO: deprecate
         self.bucket_count = bucket_count
         self.bucket_size = bucket_size
 
-        return entry_count
-
-    def archive_uses_single_file(self, input_data):
-        self._get_archive_header(input_data)
-        return self.properties[self.single_file_keyword]
-
-    def import_archive(self, input_data, input_data_sub = None):
-        entry_count = self._get_archive_header(input_data)
         in_data = BytesIO(input_data)
 
         in_data_sub = in_data
