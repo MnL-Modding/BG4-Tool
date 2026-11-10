@@ -143,11 +143,11 @@ class BinGluArchive:
 
     @staticmethod
     def get_file_entry_by_index(file_index, input_data):
-        return _file_index_table_access(input_data, file_index, 1)
+        return BinGluArchive._file_index_table_access(input_data, file_index, 1)
 
     @staticmethod
     def get_file_index_by_entry(file_entry, input_data):
-        return _file_index_table_access(input_data, file_entry, 0)
+        return BinGluArchive._file_index_table_access(input_data, file_entry, 0)
 
     @staticmethod
     def _file_index_table_access(input_data, table_index, table_value):
@@ -160,7 +160,7 @@ class BinGluArchive:
         entry_size = 14 if version > 3 else 12
 
         index_table_offset = 16 + (entry_count * entry_size)
-        file_index_offset = index_table_offset + [0, 2][table_value] + (file_entry * 4)
+        file_index_offset = index_table_offset + [0, 2][table_value] + (table_index * 4)
 
         return int.from_bytes(input_data[file_index_offset : file_index_offset + 2], 'little')
 
@@ -204,17 +204,17 @@ class BinGluArchive:
 
     @staticmethod
     def extract_file_data_by_name(file_name, input_data, input_data_sub = None):
-        entry_index = BinGluArchive.get_file_entry_by_name(input_data, file_name)
+        entry_index = BinGluArchive.get_file_entry_by_name(file_name, input_data)
         return BinGluArchive._extract_file_data_by_entry(entry_index, input_data, input_data_sub)
 
     @staticmethod
     def extract_file_data_by_index(file_index, input_data, input_data_sub = None):
-        entry_index = BinGluArchive.get_file_entry_by_index(input_data, file_index)
+        entry_index = BinGluArchive.get_file_entry_by_index(file_index, input_data)
         return BinGluArchive._extract_file_data_by_entry(entry_index, input_data, input_data_sub)
     
     @staticmethod
     def _extract_file_data_by_entry(entry_index, input_data, input_data_sub = None):
-        _, _, compression_type, data_offset, data_length = BinGluArchive.get_file_entry_data(input_data, entry_index)
+        _, _, compression_type, data_offset, data_length = BinGluArchive.get_file_entry_data(entry_index, input_data)
         if BinGluArchive.archive_uses_single_file(input_data):
             input_data_sub = input_data
         elif input_data_sub is None:
@@ -253,7 +253,7 @@ class BinGluArchive:
 
         file_sorting = {}
         for i in range(entry_count):
-            entry_data = self.get_file_entry_data(input_data, i)
+            entry_data = self.get_file_entry_data(i, input_data)
             if entry_data is None:
                 continue
 
