@@ -136,25 +136,26 @@ class BinGluArchive:
 
     # TODO: binary search
     @staticmethod
-    def get_file_entry_by_name(input_data, file_name):
-        version = input_data[4]
-        _, bucket_count, bucket_size, entry_count = BinGluArchive.get_archive_header(input_data)
+    def get_file_entry_by_name(file_name, input_data):
+        properties, bucket_count, bucket_size, entry_count = BinGluArchive.get_archive_header(input_data)
+        version = properties[BinGluArchive.version_keyword]
         entry_size = 14 if version > 3 else 12
 
     @staticmethod
-    def get_file_entry_by_index(input_data, file_index):
+    def get_file_entry_by_index(file_index, input_data):
         return _file_index_table_access(input_data, file_index, 1)
 
     @staticmethod
-    def get_file_index_by_entry(input_data, file_entry):
+    def get_file_index_by_entry(file_entry, input_data):
         return _file_index_table_access(input_data, file_entry, 0)
 
     @staticmethod
     def _file_index_table_access(input_data, table_index, table_value):
-        if not BinGluArchive.archive_uses_index_table(input_data):
+        properties, bucket_count, bucket_size, entry_count = BinGluArchive.get_archive_header(input_data)
+        if not properties[BinGluArchive.preserve_order_keyword]:
             raise BinGluError(305)
 
-        version = input_data[4]
+        version = properties[BinGluArchive.version_keyword]
         entry_count = int.from_bytes(input_data[6:8], 'little')
         entry_size = 14 if version > 3 else 12
 
@@ -164,7 +165,7 @@ class BinGluArchive:
         return int.from_bytes(input_data[file_index_offset : file_index_offset + 2], 'little')
 
     @staticmethod
-    def get_file_entry_data(input_data, file_entry):
+    def get_file_entry_data(file_entry, input_data):
         version = input_data[4]
         entry_count = int.from_bytes(input_data[6:8], 'little')
         entry_struct, entry_size = ("<IIIH", 14) if version > 3 else ("<III", 12)
@@ -200,6 +201,26 @@ class BinGluArchive:
             file_name = None
 
         return file_name, name_hash, compression_type, data_offset, data_length
+
+    @staticmethod
+    def extract_file_data_by_name(file_name, input_data, input_data_sub = None):
+        entry_index = BinGluArchive.get_file_entry_by_name(input_data, file_name)
+        return BinGluArchive._extract_file_data_by_entry(entry_index, input_data, input_data_sub)
+
+    @staticmethod
+    def extract_file_data_by_index(file_index, input_data, input_data_sub = None):
+        entry_index = BinGluArchive.get_file_entry_by_index(input_data, file_index)
+        return BinGluArchive._extract_file_data_by_entry(entry_index, input_data, input_data_sub)
+    
+    @staticmethod
+    def _extract_file_data_by_entry(entry_index, input_data, input_data_sub = None):
+        _, _, compression_type, data_offset, data_length = BinGluArchive.get_file_entry_data(input_data, entry_index)
+        if BinGluArchive.archive_uses_single_file(input_data):
+            input_data_sub = input_data
+        elif input_data_sub is None:
+            raise BinGluError(102)
+        file_data = input_data_sub[data_offset : data_offset + data_length]
+        return BinGluArchive.decompress_data(compression_type, file_data)
 
     def __init__(self):
         # hi   ------>   lo
