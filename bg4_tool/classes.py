@@ -368,7 +368,7 @@ class BinGluArchive:
             if self.properties[self.version_keyword] > 3:
                 if name is None:
                     raise BinGluError(205, [file_index])
-                name_section.extend(encoded_name + b'\0')
+                name_section.extend(name.encode('ascii') + b'\0')
 
         entry_size = 14 if self.properties[self.version_keyword] > 3 else 12
 

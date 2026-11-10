@@ -350,32 +350,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 archive_data.import_archive(primary_file)
                 archive_name = path.stem
             else:
-                header_name = path.stem
-                data_name = header_name.removesuffix("_Header") + "_Data"
-                secondary_path = path.with_stem(data_name)
+                QtWidgets.QMessageBox.about(
+                    self,
+                    #: Window Title.
+                    self.tr("Data File Needed"),
+                    self.tr("Please select the Data section file for archive '{0}'.").format(path.stem),
+                )
 
-                # i think this might be the funniest code to read that i've ever written
-                not_exist = not os.path.exists(secondary_path)
-                if not not_exist and not os.path.isfile(secondary_path):
-                    not_exist = True
-
-                if not_exist:
-                    QtWidgets.QMessageBox.about(
-                        self,
-                        #: Window Title.
-                        self.tr("Data File Needed"),
-                        self.tr("Please select the Data section file for archive '{0}'.").format(header_name),
-                    )
-
-                    secondary_file, _ = self._general_import_file()
-                    if secondary_file is None:
-                        return
-                else:
-                    with open(secondary_path, "rb") as file:
-                        secondary_file = file.read()
+                secondary_file, _ = self._general_import_file(path.parent)
+                if secondary_file is None:
+                    return
 
                 archive_data.import_archive(primary_file, secondary_file)
-                archive_name = header_name.removesuffix("_Header")
+                archive_name = str(path.stem).removesuffix("_Header")
         except BinGluError as e:
             self._throw_error(e.error_code, str(e), e.file_indices)
         else:
@@ -399,38 +386,57 @@ class MainWindow(QtWidgets.QMainWindow):
                 warning,
             )
 
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self,
-            #: Window title.
-            self.tr("Export File"),
-            f"{path}/{self.current_binglu_name}.dat",
-        )
+        key = BinGluArchive.single_file_keyword
+        if self.current_binglu_data.get_property(key):
+            path_0, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,
+                #: Window title.
+                self.tr("Export File"),
+                f"{path}/{self.current_binglu_name}.dat",
+            )
 
-        if path == '':
-            return
+            if path_0 == '':
+                return
+
+            path_1 = None
+        else:
+            path_0, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,
+                #: Window title.
+                self.tr("Export File Header Section"),
+                f"{path}/{self.current_binglu_name}_Header.dat",
+            )
+
+            if path_0 == '':
+                return
+
+            path_1, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,
+                #: Window title.
+                self.tr("Export File Data Section"),
+                f"{path}/{self.current_binglu_name}_Data.dat",
+            )
+
+            if path_1 == '':
+                return
 
         try:
             main_file, sub_file = self.current_binglu_data.export_archive()
         except BinGluError as e:
             self._throw_error(e.error_code, str(e), e.file_indices)
-        else:
-            if sub_file is None:
-                with open(path, "wb") as file:
-                    file.write(main_file)
-            else:
-                path = Path(path)
-                name = path.stem
-                with open(path.with_stem(name + "_Header"), "wb") as file:
-                    file.write(main_file)
-                with open(path.with_stem(name + "_Data"), "wb") as file:
-                    file.write(sub_file)
 
-            QtWidgets.QMessageBox.about(
-                self,
-                #: Window Title.
-                self.tr("Export Successful"),
-                self.tr("{0} has been successfully exported!").format(self.current_binglu_name),
-            )
+        with open(path_0, "wb") as file:
+            file.write(main_file)
+        if path_1 is not None:
+            with open(path_1, "wb") as file:
+                file.write(sub_file)
+
+        QtWidgets.QMessageBox.about(
+            self,
+            #: Window Title.
+            self.tr("Export Successful"),
+            self.tr("{0} has been successfully exported!").format(self.current_binglu_name),
+        )
 
 
 

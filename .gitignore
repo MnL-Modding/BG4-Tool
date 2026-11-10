@@ -178,3 +178,4 @@ cython_debug/
 *.out
 *.bin
 .bg4*
+*.exe
