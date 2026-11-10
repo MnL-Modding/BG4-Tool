@@ -232,7 +232,6 @@ class BinGluArchive:
         }
 
         # TODO: deprecate
-        self.bucket_count = 0
         self.bucket_size = 0
 
         self.files = []
@@ -242,7 +241,6 @@ class BinGluArchive:
 
         self.properties = properties
         # TODO: deprecate
-        self.bucket_count = bucket_count
         self.bucket_size = bucket_size
 
         if not self.properties[self.single_file_keyword]:
@@ -351,14 +349,31 @@ class BinGluArchive:
 
     # TODO: let the user restore names to files that only have a hash or index
 
+    def _calculate_buckets(self):
+        bucket_size = self.bucket_size
+
+        bucket_amount = len(self.files) // bucket_size
+        found = False
+        while not found:
+            test_buckets = [0] * bucket_amount
+            found = True
+            for file in self.files:
+                hsh = self.get_name_hash(file["file_name"])
+                bucket = hsh % bucket_amount
+                test_buckets[bucket] += 1
+                if test_buckets[bucket] > bucket_size:
+                    bucket_amount += 1
+                    found = False
+                    break
+
+        return bucket_amount, bucket_size
+
     def export_archive(self):
         if self.properties[self.version_keyword] != 4:
             bucket_count = 1
             bucket_size = len(self.files)
         else:
-            # TODO: get these automatically
-            bucket_count = self.bucket_count
-            bucket_size = self.bucket_size
+            bucket_count, bucket_size = self._calculate_buckets()
 
         entry_count = bucket_count * bucket_size
 
