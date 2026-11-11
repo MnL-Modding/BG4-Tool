@@ -141,6 +141,14 @@ class BinGluArchive:
         version = properties[BinGluArchive.version_keyword]
         entry_size = 14 if version > 3 else 12
 
+        name_hash = BinGluArchive.get_name_hash(file_name)
+        first_entry = 0
+        if version == 4:
+            first_entry = (name_hash % bucket_count) * bucket_size
+            entry_count = bucket_size
+        
+        print(first_entry)
+
     @staticmethod
     def get_file_entry_by_index(file_index, input_data):
         return BinGluArchive._file_index_table_access(input_data, file_index, 1)
@@ -226,7 +234,7 @@ class BinGluArchive:
         # hi   ------>   lo
         # xxxxxxPS VVVVVVVV
         self.properties = {
-            self.version_keyword:        5,
+            self.version_keyword:        4,
             self.single_file_keyword:    True,
             self.preserve_order_keyword: False,
         }
@@ -260,10 +268,14 @@ class BinGluArchive:
 
             file = {"file_name": file_name, "name_hash": name_hash if file_name is None else None, "compression_type": compression_type, "data": file_data, "data_compression_type": compression_type}
             # TODO: have this pull from the archive's index table if it has one, catch any exceptions that may raise with error code 103
-            file_sorting[data_offset] = file
+            if data_offset not in file_sorting:
+                file_sorting[data_offset] = {}
+            file_sorting[data_offset][data_length] = file
 
         for offset in sorted(file_sorting.keys()):
-            self.files.append(file_sorting[offset])
+            offset_dict = file_sorting[offset]
+            for length in sorted(offset_dict.keys()):
+                self.files.append(file_sorting[offset][length])
 
     def _check_file_index(self, file_index):
         try:
