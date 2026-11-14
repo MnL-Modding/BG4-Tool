@@ -394,20 +394,26 @@ class BinGluArchive:
 
         while True:
             bucket_amount = len(self.files) // bucket_size
+
             found = False
             while not found:
                 test_buckets = [0] * bucket_amount
+
                 found = True
                 for file in self.files:
                     hsh = self.get_name_hash(file["file_name"])
                     bucket = hsh % bucket_amount
+
                     test_buckets[bucket] += 1
                     if test_buckets[bucket] > bucket_size:
                         bucket_amount += 1
+                        if bucket_amount > 1024: # give up and try again
+                            bucket_size += 1
+                            bucket_amount = len(self.files) // bucket_size
                         found = False
                         break
 
-            if bucket_amount <= 1024 and prioritize_speed:
+            if prioritize_speed:
                 return bucket_amount, bucket_size
 
             # # TODO: this isn't the whole picture
