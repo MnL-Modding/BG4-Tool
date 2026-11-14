@@ -407,13 +407,13 @@ class BinGluArchive:
                         found = False
                         break
 
-            if ((bucket_amount * bucket_size) <= 1024 or bucket_size != 1) and prioritize_speed:
+            if bucket_amount <= 1024 and prioritize_speed:
                 return bucket_amount, bucket_size
 
-            # TODO: this isn't the whole picture
-            if not (last_bucket_amount is None or last_bucket_size is None):
-                if (bucket_amount * bucket_size) > (last_bucket_amount * last_bucket_size):
-                    return last_bucket_amount, last_bucket_size
+            # # TODO: this isn't the whole picture
+            # if not (last_bucket_amount is None or last_bucket_size is None):
+            #     if (bucket_amount * bucket_size) > (last_bucket_amount * last_bucket_size):
+            #         return last_bucket_amount, last_bucket_size
 
             last_bucket_amount, last_bucket_size = bucket_amount, bucket_size
             bucket_size += 1
