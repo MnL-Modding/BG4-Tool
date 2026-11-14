@@ -104,6 +104,32 @@ class BinGluArchive:
         return properties[BinGluArchive.preserve_order_keyword]
 
     @staticmethod
+    def _check_index_table(input_data):
+        if not BinGluArchive.archive_uses_index_table(input_data):
+            return None
+
+        properties, _, _, entry_count = BinGluArchive.get_archive_header(input_data)
+        version = properties[BinGluArchive.version_keyword]
+        entry_count = int.from_bytes(input_data[6:8], 'little')
+        entry_size = 14 if version > 3 else 12
+
+        index_table_offset = 16 + (entry_count * entry_size)
+        for i in range(entry_count):
+            entry_index_offset = index_table_offset + (i * 4)
+            file_index = int.from_bytes(input_data[entry_index_offset + 0 : entry_index_offset + 2], 'little')
+            if file_index == 0xFFFF:
+                file_entry_offset = 16 + (entry_size * i)
+                if (int.from_bytes(input_data[file_entry_offset + 8 : file_entry_offset + 8], 'little') & 0x80000000) == 0:
+                    return False
+                continue
+
+            file_index_offset = index_table_offset + (file_index * 4)
+            if i != int.from_bytes(input_data[file_index_offset + 2 : file_index_offset + 4], 'little'):
+                return False
+
+        return True
+
+    @staticmethod
     def get_name_hash(name):
         if name is None or not isinstance(name, str):
             return None
@@ -159,9 +185,12 @@ class BinGluArchive:
 
     @staticmethod
     def _file_index_table_access(input_data, table_index, table_value):
-        properties, bucket_count, bucket_size, entry_count = BinGluArchive.get_archive_header(input_data)
-        if not properties[BinGluArchive.preserve_order_keyword]:
+        properties, _, _, entry_count = BinGluArchive.get_archive_header(input_data)
+        index_table = BinGluArchive._check_index_table(input_data)
+        if index_table is None:
             raise BinGluError(305)
+        elif not index_table:
+            raise BinGluError(103)
 
         version = properties[BinGluArchive.version_keyword]
         entry_count = int.from_bytes(input_data[6:8], 'little')
@@ -239,17 +268,12 @@ class BinGluArchive:
             self.preserve_order_keyword: False,
         }
 
-        # TODO: deprecate
-        self.bucket_size = 0
-
         self.files = []
 
     def import_archive(self, input_data, input_data_sub = None):
         properties, bucket_count, bucket_size, entry_count = self.get_archive_header(input_data)
 
         self.properties = properties
-        # TODO: deprecate
-        self.bucket_size = bucket_size
 
         if not self.properties[self.single_file_keyword]:
             if input_data_sub is None:
@@ -258,6 +282,8 @@ class BinGluArchive:
             input_data_sub = input_data
 
         file_sorting = {}
+        sort_by_index = self._check_index_table(input_data)
+
         for i in range(entry_count):
             entry_data = self.get_file_entry_data(i, input_data)
             if entry_data is None:
@@ -267,15 +293,15 @@ class BinGluArchive:
             file_data = input_data_sub[data_offset : data_offset + data_length]
 
             file = {"file_name": file_name, "name_hash": name_hash if file_name is None else None, "compression_type": compression_type, "data": file_data, "data_compression_type": compression_type}
-            # TODO: have this pull from the archive's index table if it has one, catch any exceptions that may raise with error code 103
-            if data_offset not in file_sorting:
-                file_sorting[data_offset] = {}
-            file_sorting[data_offset][data_length] = file
 
-        for offset in sorted(file_sorting.keys()):
-            offset_dict = file_sorting[offset]
-            for length in sorted(offset_dict.keys()):
-                self.files.append(file_sorting[offset][length])
+            if sort_by_index:
+                file_index = self.get_file_index_by_entry(i, input_data)
+                file_sorting[file_index] = file
+            else:
+                file_sorting[(data_offset, data_length)] = file
+
+        for file in sorted(file_sorting.keys()):
+            self.files.append(file_sorting[file])
 
     def _check_file_index(self, file_index):
         try:
@@ -361,24 +387,37 @@ class BinGluArchive:
 
     # TODO: let the user restore names to files that only have a hash or index
 
-    def _calculate_buckets(self):
-        bucket_size = self.bucket_size
+    def _calculate_buckets(self, prioritize_speed = True):
+        bucket_size = 1
+        last_bucket_amount = None
+        last_bucket_size = None
 
-        bucket_amount = len(self.files) // bucket_size
-        found = False
-        while not found:
-            test_buckets = [0] * bucket_amount
-            found = True
-            for file in self.files:
-                hsh = self.get_name_hash(file["file_name"])
-                bucket = hsh % bucket_amount
-                test_buckets[bucket] += 1
-                if test_buckets[bucket] > bucket_size:
-                    bucket_amount += 1
-                    found = False
-                    break
+        while True:
+            bucket_amount = len(self.files) // bucket_size
+            found = False
+            while not found:
+                test_buckets = [0] * bucket_amount
+                found = True
+                for file in self.files:
+                    hsh = self.get_name_hash(file["file_name"])
+                    bucket = hsh % bucket_amount
+                    test_buckets[bucket] += 1
+                    if test_buckets[bucket] > bucket_size:
+                        bucket_amount += 1
+                        found = False
+                        break
 
-        return bucket_amount, bucket_size
+            if ((bucket_amount * bucket_size) <= 1024 or bucket_size != 1) and prioritize_speed:
+                return bucket_amount, bucket_size
+
+            # TODO: this isn't the whole picture
+            if not (last_bucket_amount is None or last_bucket_size is None):
+                if (bucket_amount * bucket_size) > (last_bucket_amount * last_bucket_size):
+                    return last_bucket_amount, last_bucket_size
+
+            last_bucket_amount, last_bucket_size = bucket_amount, bucket_size
+            bucket_size += 1
+
 
     def export_archive(self):
         if self.properties[self.version_keyword] != 4:
