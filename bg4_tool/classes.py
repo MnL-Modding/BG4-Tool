@@ -347,6 +347,13 @@ class BinGluArchive:
         self.files.append({"file_name": file_name, "name_hash": None})
         self.set_file_data(file_index, file_data, is_by_index = True)
 
+    def set_file_name(self, file_name, new_name, is_by_index = False):
+        file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
+        self._check_file_index(file_index)
+
+        self.files[file_index]["file_name"] = new_name
+        self.files[file_index]["name_hash"] = None
+
     def set_file_data(self, file_name, file_data, is_by_index = False):
         file_index = self.get_file_id_by_name_or_hash(file_name) if not is_by_index else file_name
         self._check_file_index(file_index)
