@@ -114,17 +114,24 @@ class BinGluArchive:
         entry_size = 14 if version > 3 else 12
 
         index_table_offset = 16 + (entry_count * entry_size)
+        invalid_files = 0
         for i in range(entry_count):
             entry_index_offset = index_table_offset + (i * 4)
             file_index = int.from_bytes(input_data[entry_index_offset + 0 : entry_index_offset + 2], 'little')
             if file_index == 0xFFFF:
+                invalid_files += 1
                 file_entry_offset = 16 + (entry_size * i)
-                if (int.from_bytes(input_data[file_entry_offset + 8 : file_entry_offset + 8], 'little') & 0x80000000) == 0:
+                if (int.from_bytes(input_data[file_entry_offset + 4 : file_entry_offset + 8], 'little') & 0x80000000) == 0:
                     return False
                 continue
 
             file_index_offset = index_table_offset + (file_index * 4)
             if i != int.from_bytes(input_data[file_index_offset + 2 : file_index_offset + 4], 'little'):
+                return False
+
+        for i in range(invalid_files):
+            file_index_offset = index_table_offset + ((entry_count - (i + 1)) * 4)
+            if 0xFFFF != int.from_bytes(input_data[file_index_offset + 2 : file_index_offset + 4], 'little'):
                 return False
 
         return True
@@ -176,21 +183,23 @@ class BinGluArchive:
         print(first_entry)
 
     @staticmethod
-    def get_file_entry_by_index(file_index, input_data):
-        return BinGluArchive._file_index_table_access(input_data, file_index, 1)
+    def get_file_entry_by_index(file_index, input_data, unsafe_access = False):
+        return BinGluArchive._file_index_table_access(input_data, file_index, unsafe_access, 1)
 
     @staticmethod
-    def get_file_index_by_entry(file_entry, input_data):
-        return BinGluArchive._file_index_table_access(input_data, file_entry, 0)
+    def get_file_index_by_entry(file_entry, input_data, unsafe_access = False):
+        return BinGluArchive._file_index_table_access(input_data, file_entry, unsafe_access, 0)
 
     @staticmethod
-    def _file_index_table_access(input_data, table_index, table_value):
+    def _file_index_table_access(input_data, table_index, unsafe_access, table_value):
         properties, _, _, entry_count = BinGluArchive.get_archive_header(input_data)
-        index_table = BinGluArchive._check_index_table(input_data)
-        if index_table is None:
-            raise BinGluError(305)
-        elif not index_table:
-            raise BinGluError(103)
+
+        if not unsafe_access:
+            index_table = BinGluArchive._check_index_table(input_data)
+            if index_table is None:
+                raise BinGluError(305)
+            elif not index_table:
+                raise BinGluError(103)
 
         version = properties[BinGluArchive.version_keyword]
         entry_count = int.from_bytes(input_data[6:8], 'little')
@@ -295,7 +304,7 @@ class BinGluArchive:
             file = {"file_name": file_name, "name_hash": name_hash if file_name is None else None, "compression_type": compression_type, "data": file_data, "data_compression_type": compression_type}
 
             if sort_by_index:
-                file_index = self.get_file_index_by_entry(i, input_data)
+                file_index = self.get_file_index_by_entry(i, input_data, unsafe_access = True) # bypass slow table check since it was already checked once
                 file_sorting[file_index] = file
             else:
                 file_sorting[(data_offset, data_length)] = file
