@@ -31,7 +31,6 @@ if __name__ == '__main__':
     main()
 
 
-# TODO: display file ID number next to file
 # TODO: be able to drag and drop files to reorganize and move between folders
 # TODO: be able to drop archives onto the window to import them
 # TODO: check all files during import for whether there are nested archive files
@@ -125,9 +124,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toggle_checkboxes[toggle] = checkbox
 
         self.file_tree = QtWidgets.QTreeWidget()
-        self.file_tree.setColumnCount(1)
+        self.file_tree.setColumnCount(2)
+        self.file_tree.hideColumn(1)
         self.file_tree.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_tree.customContextMenuRequested.connect(self.tree_context_menu)
+        self.file_tree.setItemDelegate(IndexedItemDelegate(self.file_tree))
         main_layout.addWidget(self.file_tree, 3, 0)
 
         self._set_program_icons()
@@ -660,3 +661,33 @@ class NumericTreeItem(QtWidgets.QTreeWidgetItem):
             return int(text_self) < int(text_other)
         except ValueError:
             return text_self < text_other
+
+
+
+class IndexedItemDelegate(QtWidgets.QStyledItemDelegate):
+    def paint(self, painter, option: QtWidgets.QStyleOptionViewItem, index):
+        super().paint(painter, option, index)
+
+        index_text = index.siblingAtColumn(1).data(QtCore.Qt.DisplayRole)
+        if not index_text:
+            return
+
+        padding = 8
+        text_width = painter.fontMetrics().horizontalAdvance(index_text)
+        text_rect = option.rect.adjusted(option.rect.width() - (round(padding * 1.5) + text_width), 0, 0, 0)
+
+        color_role = QtGui.QPalette.ColorRole.Highlight if option.state & QtWidgets.QStyle.StateFlag.State_Selected else QtGui.QPalette.ColorRole.Base
+        color = option.palette.color(color_role)
+        painter.setPen(QtCore.Qt.transparent)
+        painter.setBrush(color)
+        painter.drawRect(text_rect)
+
+        text_rect = text_rect.adjusted(0, 0, -padding, 0)
+
+        color_role = QtGui.QPalette.ColorRole.HighlightedText if option.state & QtWidgets.QStyle.StateFlag.State_Selected else QtGui.QPalette.ColorRole.ToolTipText
+        painter.setPen(option.palette.color(color_role))
+        painter.drawText(
+            text_rect,
+            QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter,
+            str(index_text),
+        )
