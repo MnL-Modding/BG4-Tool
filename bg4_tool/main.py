@@ -267,6 +267,9 @@ class MainWindow(QtWidgets.QMainWindow):
             #301: "Access Error: Bad Property",
             #302: "Access Error: Bad File Name",
             #303: "Access Error: File Does Not Exist",
+            #304: "Access Error: Unsupported Version",
+            #305: "Access Error: Indexed Access Not Supported",
+            #306: "Access Error: Unsupported Compression Method",
         }.get(error_code)
 
         #: Formatted as "Error 101 - Import Error: Bad Header" for example
@@ -442,7 +445,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.current_binglu_data.get_property(key):
             path_0, _ = QtWidgets.QFileDialog.getSaveFileName(
                 self,
-                #: Window title.
+                #: Window Title.
                 self.tr("Export File"),
                 f"{path}/{self.current_binglu_name}.dat",
             )
@@ -454,7 +457,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             path_0, _ = QtWidgets.QFileDialog.getSaveFileName(
                 self,
-                #: Window title.
+                #: Window Title.
                 self.tr("Export File Header Section"),
                 f"{path}/{self.current_binglu_name}_Header.dat",
             )
@@ -464,7 +467,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             path_1, _ = QtWidgets.QFileDialog.getSaveFileName(
                 self,
-                #: Window title.
+                #: Window Title.
                 self.tr("Export File Data Section"),
                 f"{path}/{self.current_binglu_name}_Data.dat",
             )
@@ -635,7 +638,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
-            #: Window Title
+            #: Window Title.
             self.tr("Import File"),
             str(path.resolve()),
         )
@@ -654,7 +657,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            #: Window title.
+            #: Window Title.
             self.tr("Export File"),
             f"{path}/{file_name}",
         )
@@ -671,6 +674,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         path = QtWidgets.QFileDialog.getExistingDirectory(
             self,
+            #: Window Title.
             self.tr("Select Folder"),
             str(path.resolve()),
             options = QtWidgets.QFileDialog.Option.ShowDirsOnly
