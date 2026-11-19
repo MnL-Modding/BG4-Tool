@@ -216,7 +216,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ],
             'f1': [
                 self.tr("Forward: LZ11"),
-                self.tr("Standard LZSS-like compression, slower to decompress than Backward. Slower to compress but slightly smaller than LZ11."),
+                self.tr("Standard LZSS-like compression, slower to decompress than Backward. Slower to compress but slightly smaller than LZ10."),
             ],
             'b0': [
                 self.tr("Backward: AlphaDream"),
