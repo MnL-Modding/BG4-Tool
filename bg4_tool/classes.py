@@ -3,11 +3,13 @@ import struct
 from bg4_tool.script import decompress_lz1x, decompress_blz
 
 # TODO: add blz compression
-def compress_blz(data):
+def compress_blz(method, data):
+    print(f"attempted to backward compress data with method {method}")
     return data
 
 # TODO: add lz10/lz11 compression
-def compress_lz1x(data):
+def compress_lz1x(method, data):
+    print(f"attempted to forward compress data with method {method}")
     return data
 
 class BinGluError(Exception):
@@ -69,8 +71,10 @@ class BinGluArchive:
     single_file_keyword = "single_file"
     preserve_order_keyword = "preserve_order"
 
+    compression_method_keyword = "compression_method"
+
     @classmethod
-    def get_archive_header(cls, input_data):
+    def get_archive_header(cls, input_data, get_advanced = False):
         magic = input_data[:4]
         if magic != cls.header_magic:
             raise BinGluError(101)
@@ -86,7 +90,12 @@ class BinGluArchive:
         if entry_count != (bucket_count * bucket_size) and properties[cls.version_keyword] == 4:
             raise BinGluError(101)
 
-        return properties, bucket_count, bucket_size, entry_count
+        if get_advanced:
+            uncompressed = (properties_raw & 0x8000) != 0
+            blz_algorithm = properties_raw & 0x6000
+            return properties, bucket_count, bucket_size, entry_count, uncompressed, blz_algorithm
+        else:
+            return properties, bucket_count, bucket_size, entry_count
 
     @classmethod
     def get_archive_version(cls, input_data):
@@ -148,12 +157,12 @@ class BinGluArchive:
             hsh = (hsh * 31 + c) & 0xFFFFFFFF
         return hsh
 
-    # TODO: add subtype
     @staticmethod
     def compress_data(compression_type, data):
-        match compression_type:
-            case "f": data = compress_lz1x(data)
-            case "b": data = compress_blz(data)
+        method = int(compression_type[1])
+        match compression_type[0]:
+            case "f": data = compress_lz1x(method, data)
+            case "b": data = compress_blz(method, data)
             case _: pass
 
         return data
@@ -277,10 +286,15 @@ class BinGluArchive:
             self.preserve_order_keyword: False,
         }
 
+        # TODO: allow user to change
+        self.advanced_properties = {
+            self.compression_method_keyword: 'b0',
+        }
+
         self.files = []
 
     def import_archive(self, input_data, input_data_sub = None):
-        properties, bucket_count, bucket_size, entry_count = self.get_archive_header(input_data)
+        properties, bucket_count, bucket_size, entry_count, uncompressed, blz_algorithm = self.get_archive_header(input_data, get_advanced = True)
 
         self.properties = properties
 
@@ -292,8 +306,11 @@ class BinGluArchive:
 
         file_sorting = {}
         sort_by_index = self._check_index_table(input_data)
+        compression_method = None if uncompressed else f"b{blz_algorithm}"
+        compression_confirmation = {}
 
         for i in range(entry_count):
+            # TODO: figure out whether to make compression type two characters or not
             entry_data = self.get_file_entry_data(i, input_data)
             if entry_data is None:
                 continue
@@ -309,8 +326,30 @@ class BinGluArchive:
             else:
                 file_sorting[(data_offset, data_length)] = file
 
+            comp_add = None
+            if compression_type == "f":
+                lz_type = file_data[0]
+                comp_type = {
+                    0x10: 0,
+                    0x11: 1,
+                }[lz_type]
+                comp_add = f"f{comp_type}"
+            elif compression_type == "b":
+                comp_add = f"b{blz_algorithm}"
+
+            if comp_add is not None:
+                if comp_add not in compression_confirmation:
+                    compression_confirmation[comp_add] = 0
+                
+                compression_confirmation[comp_add] += 1
+
         for file in sorted(file_sorting.keys()):
             self.files.append(file_sorting[file])
+
+        if compression_confirmation != {}:
+            compression_method = max(compression_confirmation, key = compression_confirmation.get)
+
+        self.advanced_properties[self.compression_method_keyword] = compression_method
 
     def _check_file_index(self, file_index):
         try:
@@ -578,6 +617,7 @@ class BinGluArchive:
 
         properties = self.properties[self.version_keyword]
 
+        # TODO: add 'uncompressed' and 'blz_algorithm' to properties short
         if self.properties[self.single_file_keyword]:    properties |= 0x0100
         if self.properties[self.preserve_order_keyword]: properties |= 0x0200
 
