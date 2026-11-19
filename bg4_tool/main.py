@@ -123,13 +123,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
             self.toggle_checkboxes[toggle] = checkbox
 
+        self.compression_selector_text = QtWidgets.QLabel()
+        self.compression_selector = QtWidgets.QComboBox()
+        self.compression_selector.addItems([str(i) for i in BinGluArchive.supported_compression_methods])
+        self.compression_selector.currentIndexChanged.connect(self.set_compression)
+        main_layout.addWidget(self.compression_selector_text, 3, 0)
+        main_layout.addWidget(self.compression_selector, 4, 0)
+
         self.file_tree = QtWidgets.QTreeWidget()
         self.file_tree.setColumnCount(2)
         self.file_tree.hideColumn(1)
         self.file_tree.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_tree.customContextMenuRequested.connect(self.tree_context_menu)
         self.file_tree.setItemDelegate(IndexedItemDelegate(self.file_tree))
-        main_layout.addWidget(self.file_tree, 3, 0)
+        main_layout.addWidget(self.file_tree, 5, 0)
 
         self._set_program_icons()
         self._set_program_text()
@@ -191,6 +198,44 @@ class MainWindow(QtWidgets.QMainWindow):
             name_string, desc_string = toggles.get(key, ["", ""])
             checkbox.setText(name_string)
             checkbox.setToolTip(desc_string)
+
+        self.compression_selector_text.setText(self.tr("Compression Method:"))
+
+        compressions = {
+            None: [
+                self.tr("Uncompressed"),
+                self.tr("Creates a large archive, but is quick to import and export for rapid changes."),
+            ],
+            'm': [
+                self.tr("Varied"),
+                self.tr("Preserve the compression method already used in every file."),
+            ],
+            'f0': [
+                self.tr("Forward: LZ10"),
+                self.tr("Standard LZSS-like compression, slower to decompress than Backward. Faster to compress but slightly larger than LZ11."),
+            ],
+            'f1': [
+                self.tr("Forward: LZ11"),
+                self.tr("Standard LZSS-like compression, slower to decompress than Backward. Slower to compress but slightly smaller than LZ11."),
+            ],
+            'b0': [
+                self.tr("Backward: AlphaDream"),
+                self.tr("In-place LZSS-like compression, faster to decompress than Forward. Produces files that are byte-matching with the original archives."),
+            ],
+            'b1': [
+                self.tr("Backward: Nintendo"),
+                self.tr("In-place LZSS-like compression, faster to decompress than Forward. Produces files that match Nintendo's official algorithm."),
+            ],
+            'b2': [
+                self.tr("Backward: CUE"),
+                self.tr("In-place LZSS-like compression, faster to decompress than Forward. Slow to compress, but produces files much smaller than official algorithms."),
+            ],
+        }
+
+        for i, compression in enumerate(BinGluArchive.supported_compression_methods):
+            name_string, desc_string = compressions[compression]
+            self.compression_selector.setItemText(i, name_string)
+            self.compression_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
         
         self.file_tree.setHeaderLabels([self.tr("File Tree")])
 
@@ -322,6 +367,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def toggle_property(self, set_property):
         checked = self.toggle_checkboxes[set_property].isChecked()
         self.current_binglu_data.set_property(set_property, checked)
+        self._update_saved(False)
+
+    def set_compression(self, compression_index):
+        set_property = BinGluArchive.compression_method_keyword
+        compression = BinGluArchive.supported_compression_methods[compression_index]
+        self.current_binglu_data.set_property(set_property, compression)
         self._update_saved(False)
 
     def import_archive_file(self):
@@ -494,7 +545,6 @@ class MainWindow(QtWidgets.QMainWindow):
         key = BinGluArchive.version_keyword
         version = self.current_binglu_data.get_property(key)
         version_index = BinGluArchive.supported_versions.index(version)
-
         self.version_selector.blockSignals(True)
         self.version_selector.setCurrentIndex(version_index)
         self.version_selector.blockSignals(False)
@@ -502,6 +552,13 @@ class MainWindow(QtWidgets.QMainWindow):
         for key, checkbox in self.toggle_checkboxes.items():
             toggle_state = self.current_binglu_data.get_property(key)
             checkbox.setChecked(toggle_state)
+
+        key = BinGluArchive.compression_method_keyword
+        compression = self.current_binglu_data.get_property(key)
+        compression_index = BinGluArchive.supported_compression_methods.index(compression)
+        self.compression_selector.blockSignals(True)
+        self.compression_selector.setCurrentIndex(compression_index)
+        self.compression_selector.blockSignals(False)
 
         top_parent = self.file_tree.topLevelItem(0)
         files = self.current_binglu_data.files.copy()
