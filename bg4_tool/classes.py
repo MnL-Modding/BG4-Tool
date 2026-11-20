@@ -287,13 +287,16 @@ class BinGluArchive:
     @classmethod
     def _extract_file_data_by_entry(cls, entry_index, input_data, input_data_sub = None):
         _, _, compression_type, data_offset, data_length = cls.get_file_entry_data(entry_index, input_data)
+        _, header_length, _, _, _ = self.get_archive_header(input_data)
+
+        header_length_adjusted = 0
         if cls.archive_uses_single_file(input_data):
+            header_length_adjusted = header_length
             input_data_sub = input_data
         elif input_data_sub is None:
             raise BinGluError(102)
 
-        _, header_length, _, _, _ = self.get_archive_header(input_data)
-        if data_offset < header_length or (data_offset + data_length) > len(input_data_sub):
+        if (data_offset < header_length_adjusted) or ((data_offset + data_length) > len(input_data_sub)):
             raise BinGluError(307)
 
         file_data = input_data_sub[data_offset : data_offset + data_length]
@@ -320,10 +323,12 @@ class BinGluArchive:
 
         self.properties = properties
 
+        header_length_adjusted = 0
         if not self.properties[self.single_file_keyword]:
             if input_data_sub is None:
                 raise BinGluError(102)
         else:
+            header_length_adjusted = header_length
             input_data_sub = input_data
 
         file_sorting = {}
@@ -338,7 +343,7 @@ class BinGluArchive:
 
             file_name, name_hash, compression_type, data_offset, data_length = entry_data
 
-            if data_offset < header_length or (data_offset + data_length) > len(input_data_sub):
+            if (data_offset < header_length_adjusted) or ((data_offset + data_length) > len(input_data_sub)):
                 raise BinGluError(307)
 
             file_data = input_data_sub[data_offset : data_offset + data_length]

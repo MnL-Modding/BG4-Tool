@@ -423,12 +423,15 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.tr("Please select the Data section file for archive '{0}'.").format(path.stem),
                 )
 
-                secondary_file, _ = self._general_import_file(path.parent)
+                secondary_file, second_path = self._general_import_file(path.parent)
                 if secondary_file is None:
                     return
 
                 archive_data.import_archive(primary_file, secondary_file)
-                archive_name = str(path.stem).removesuffix("_Header")
+                common_name = os.path.commonprefix([str(path.stem), str(second_path.stem)])
+                archive_name = common_name.removesuffix("_")
+                if not archive_name:
+                    archive_name = str(second_path.stem)
         except BinGluError as e:
             self._throw_error(e.error_code, str(e), e.file_indices)
             return None
