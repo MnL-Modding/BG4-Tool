@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from bg4_tool.classes import BinGluArchive, BinGluError
+from bg4_tool.classes import BinGluArchive, BinGluError, BinGlu4Modes
 from bg4_tool.constants import *
 
 
@@ -97,12 +97,12 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout = QtWidgets.QGridLayout(main)
         self.setCentralWidget(main)
 
-        self.version_selector_text = QtWidgets.QLabel()
-        self.version_selector = QtWidgets.QComboBox()
-        self.version_selector.addItems([str(i) for i in BinGluArchive.supported_versions])
-        self.version_selector.currentIndexChanged.connect(self.set_version)
-        main_layout.addWidget(self.version_selector_text, 0, 0)
-        main_layout.addWidget(self.version_selector, 1, 0)
+        self.mode_selector_text = QtWidgets.QLabel()
+        self.mode_selector = QtWidgets.QComboBox()
+        self.mode_selector.addItems([str(i) for i in BinGluArchive.supported_modes])
+        self.mode_selector.currentIndexChanged.connect(self.set_mode)
+        main_layout.addWidget(self.mode_selector_text, 0, 0)
+        main_layout.addWidget(self.mode_selector, 1, 0)
 
         checkboxes = QtWidgets.QWidget()
         checkboxes_layout = QtWidgets.QVBoxLayout(checkboxes)
@@ -162,27 +162,27 @@ class MainWindow(QtWidgets.QMainWindow):
         #: The "&" symbol will underline a letter and cause the option to be selectable by pressing the letter on your keyboard while holding Alt. Please ensure all letters that are given this property within each submenu and in the toolbar itself are unique, so all options can be selected this way.
         self.menu_bar_file_quit.setText(self.tr("&Quit"))
 
-        self.version_selector_text.setText(self.tr("Archive Version:"))
+        self.mode_selector_text.setText(self.tr("Archive Mode:"))
 
-        versions = {
-            3: [
+        modes = {
+            BinGlu4Modes.BINARY_SEARCH: [
                 self.tr("Compact Binary Search"),
                 self.tr("Uses binary searching to quickly sort through every file's name hash. Does not store file names, and fails to export if two file names share a hash."),
             ],
-            4: [
+            BinGlu4Modes.SAFE_BUCKET_SEARCH: [
                 self.tr("Quick Name Lookup"),
                 self.tr("Uses search buckets to narrow down the file being searched for extremely quickly. Stores file names in case two names share a hash."),
             ],
-            5: [
+            BinGlu4Modes.SAFE_BINARY_SEARCH: [
                 self.tr("Safe Binary Search"),
                 self.tr("Uses binary searching to sort through every file's name hash. Stores file names in case two names share a hash."),
             ],
         }
 
-        for i, version in enumerate(BinGluArchive.supported_versions):
-            name_string, desc_string = versions[version]
-            self.version_selector.setItemText(i, self.tr("Version {0}: {1}").format(version, name_string))
-            self.version_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
+        for i, mode in enumerate(BinGluArchive.supported_modes):
+            name_string, desc_string = modes[mode]
+            self.mode_selector.setItemText(i, self.tr("Mode {0}: {1}").format(mode, name_string))
+            self.mode_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
 
         toggles = {
             BinGluArchive.single_file_keyword: [
@@ -272,7 +272,7 @@ class MainWindow(QtWidgets.QMainWindow):
             #301: "Access Error: Bad Property",
             #302: "Access Error: Bad File Name",
             #303: "Access Error: File Does Not Exist",
-            #304: "Access Error: Unsupported Version",
+            #304: "Access Error: Unsupported Mode",
             #305: "Access Error: Indexed Access Not Supported",
             #306: "Access Error: Unsupported Compression Method",
              307: self.tr("A file attempted to read out-of-bounds data from the data section. Are you sure the correct data section was selected?"),
@@ -367,10 +367,10 @@ class MainWindow(QtWidgets.QMainWindow):
             name += "*"
         self.setWindowTitle(name)
 
-    def set_version(self, version_index):
-        set_property = BinGluArchive.version_keyword
-        version = BinGluArchive.supported_versions[version_index]
-        self.current_binglu_data.set_property(set_property, version)
+    def set_mode(self, mode_index):
+        set_property = BinGluArchive.mode_keyword
+        mode = BinGluArchive.supported_modes[mode_index]
+        self.current_binglu_data.set_property(set_property, mode)
         self._update_saved(False)
 
     def toggle_property(self, set_property):
@@ -440,12 +440,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def export_archive_file(self):
         path = Path("").resolve()
 
-        key = BinGluArchive.version_keyword
-        version = self.current_binglu_data.get_property(key)
+        key = BinGluArchive.mode_keyword
+        mode = self.current_binglu_data.get_property(key)
         warning = None
-        match version:
-            case 3:
-                warning = self.tr("You are using Version 3 to export this archive. This is supported, but not recommended.\n\nSince file names are lost when exporting this way, you or other people will not be able to see file names when importing the archive.\n\nUsing Version 3 also means other programs may not be able to open this archive properly.")
+        match mode:
+            case BinGlu4Modes.BINARY_SEARCH:
+                warning = self.tr("You are using Mode 3 to export this archive. This is supported, but not recommended.\n\nSince file names are lost when exporting this way, you or other people will not be able to see file names when importing the archive.\n\nUsing Mode 3 also means other programs may not be able to open this archive properly.")
 
         if warning is not None:
             QtWidgets.QMessageBox.warning(
@@ -559,12 +559,12 @@ class MainWindow(QtWidgets.QMainWindow):
         top_parent.item_type = "top"
 
     def rebuild_tree_view(self):
-        key = BinGluArchive.version_keyword
-        version = self.current_binglu_data.get_property(key)
-        version_index = BinGluArchive.supported_versions.index(version)
-        self.version_selector.blockSignals(True)
-        self.version_selector.setCurrentIndex(version_index)
-        self.version_selector.blockSignals(False)
+        key = BinGluArchive.mode_keyword
+        mode = self.current_binglu_data.get_property(key)
+        mode_index = BinGluArchive.supported_modes.index(mode)
+        self.mode_selector.blockSignals(True)
+        self.mode_selector.setCurrentIndex(mode_index)
+        self.mode_selector.blockSignals(False)
 
         for key, checkbox in self.toggle_checkboxes.items():
             toggle_state = self.current_binglu_data.get_property(key)
