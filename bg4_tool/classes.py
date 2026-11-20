@@ -94,9 +94,8 @@ class BinGluArchive:
             raise BinGluError(101)
 
         if get_advanced:
-            uncompressed =  (properties_raw & 0x8000) != 0
-            blz_algorithm = (properties_raw & 0x6000) >> 13
-            return properties, bucket_count, bucket_size, entry_count, uncompressed, blz_algorithm
+            blz_algorithm = (properties_raw & 0xC000) >> 14
+            return properties, bucket_count, bucket_size, entry_count, blz_algorithm
         else:
             return properties, bucket_count, bucket_size, entry_count
 
@@ -308,7 +307,7 @@ class BinGluArchive:
         self.files = []
 
     def import_archive(self, input_data, input_data_sub = None):
-        properties, bucket_count, bucket_size, entry_count, uncompressed, blz_algorithm = self.get_archive_header(input_data, get_advanced = True)
+        properties, bucket_count, bucket_size, entry_count, blz_algorithm = self.get_archive_header(input_data, get_advanced = True)
 
         self.properties = properties
 
@@ -320,7 +319,7 @@ class BinGluArchive:
 
         file_sorting = {}
         sort_by_index = self._check_index_table(input_data)
-        compression_method = None if uncompressed else f'b{blz_algorithm}'
+        compression_method = None
         compression_confirmation = 0
 
         for i in range(entry_count):
@@ -646,15 +645,13 @@ class BinGluArchive:
         properties = self.properties[self.version_keyword]
 
         compression_method = self.advanced_properties[self.compression_method_keyword]
-        uncompressed = compression_method is None
         blz_algorithm = 0
         if compression_method is not None and compression_method[0] == 'b':
             blz_algorithm = int(compression_method[1])
+        properties |= blz_algorithm << 14
 
         if self.properties[self.single_file_keyword]:    properties |= 0x0100
         if self.properties[self.preserve_order_keyword]: properties |= 0x0200
-        if uncompressed:                                 properties |= 0x8000
-        properties |= blz_algorithm << 13
 
         if self.properties[self.version_keyword] != 4:
             bucket_count, bucket_size = 0, 0
