@@ -193,9 +193,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.tr("Preserve File Order"),
                 self.tr("Creates an additional table that tracks the index of each file in the archive. Necessary for archives that can use an index to find a file."),
             ],
-            # TODO: get actual padding amount
             BinGluArchive.pad_header_keyword: [
-                self.tr("Pad Header to 256 Bytes"),
+                self.tr("Pad Header to 128 Bytes"),
                 self.tr("Can help enforce byte alignment if the context for the archive requires it."),
             ],
         }

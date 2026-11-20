@@ -379,8 +379,7 @@ class BinGluArchive:
             self.files.append(file_sorting[file])
 
         self.advanced_properties[self.compression_method_keyword] = compression_method
-        # TODO: get actual padding amount
-        self.advanced_properties[self.pad_header_keyword] = (header_length & 0xFF) == 0
+        self.advanced_properties[self.pad_header_keyword] = (header_length & 0x7F) == 0
 
     def _check_file_index(self, file_index):
         try:
@@ -569,9 +568,8 @@ class BinGluArchive:
         if self.properties[self.preserve_order_keyword]: header_length += entry_count * 4
 
         pad_amount = 4
-        # TODO: get actual padding amount
         if self.advanced_properties[self.pad_header_keyword]:
-            pad_amount = 0x100
+            pad_amount = 0x80
         extra_padding = (pad_amount - (header_length % pad_amount)) % pad_amount
         header_length += extra_padding
 
