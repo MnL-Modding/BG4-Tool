@@ -270,6 +270,7 @@ class MainWindow(QtWidgets.QMainWindow):
             #304: "Access Error: Unsupported Version",
             #305: "Access Error: Indexed Access Not Supported",
             #306: "Access Error: Unsupported Compression Method",
+             307: self.tr("A file attempted to read out-of-bounds data from the data section. Are you sure the correct data section was selected?"),
         }.get(error_code)
 
         #: Formatted as "Error 101 - Import Error: Bad Header" for example
@@ -390,7 +391,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if primary_file is None:
             return
 
-        self.current_binglu_data, name = self._import_archive_file(primary_file, path)
+        output = self._import_archive_file(primary_file, path)
+        if output is None:
+            return
+
+        self.current_binglu_data, name = output
         self._update_name(name)
 
         self.current_save_path = None
@@ -420,6 +425,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 archive_name = str(path.stem).removesuffix("_Header")
         except BinGluError as e:
             self._throw_error(e.error_code, str(e), e.file_indices)
+            return None
         else:
             return archive_data, archive_name
 
@@ -479,19 +485,19 @@ class MainWindow(QtWidgets.QMainWindow):
             main_file, sub_file = self.current_binglu_data.export_archive()
         except BinGluError as e:
             self._throw_error(e.error_code, str(e), e.file_indices)
+        else:
+            with open(path_0, "wb") as file:
+                file.write(main_file)
+            if path_1 is not None:
+                with open(path_1, "wb") as file:
+                    file.write(sub_file)
 
-        with open(path_0, "wb") as file:
-            file.write(main_file)
-        if path_1 is not None:
-            with open(path_1, "wb") as file:
-                file.write(sub_file)
-
-        QtWidgets.QMessageBox.about(
-            self,
-            #: Window Title.
-            self.tr("Export Successful"),
-            self.tr("{0} has been successfully exported!").format(self.current_binglu_name),
-        )
+            QtWidgets.QMessageBox.about(
+                self,
+                #: Window Title.
+                self.tr("Export Successful"),
+                self.tr("{0} has been successfully exported!").format(self.current_binglu_name),
+            )
 
 
 

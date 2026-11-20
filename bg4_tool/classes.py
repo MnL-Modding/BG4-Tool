@@ -36,6 +36,7 @@ class BinGluError(Exception):
     Code 304: Requested version is not supported.
     Code 305: This archive does not support being accessed via index.
     Code 306: Requested compression method is not supported.
+    Code 307: Requested file data is outside of the data section.
     """
     def __init__(self, error_code, file_indices = []):
         message = {
@@ -59,6 +60,7 @@ class BinGluError(Exception):
             304: "Access Error: Unsupported Version",
             305: "Access Error: Indexed Access Not Supported",
             306: "Access Error: Unsupported Compression Method",
+            307: "Access Error: Out of Bounds Read",
         }.get(error_code, f"Error Code {error_code} Not Implemented")
         super().__init__(message)
         self.error_code = error_code
@@ -82,7 +84,7 @@ class BinGluArchive:
         if magic != cls.header_magic:
             raise BinGluError(101)
         
-        properties_raw, entry_count, _header_length, bucket_count, bucket_size = struct.unpack("<HHIHH", input_data[4:16])
+        properties_raw, entry_count, header_length, bucket_count, bucket_size = struct.unpack("<HHIHH", input_data[4:16])
 
         properties = {}
         properties[cls.version_keyword] = properties_raw & 0x00FF
@@ -95,23 +97,23 @@ class BinGluArchive:
 
         if get_advanced:
             blz_algorithm = (properties_raw & 0xC000) >> 14
-            return properties, bucket_count, bucket_size, entry_count, blz_algorithm
+            return properties, header_length, bucket_count, bucket_size, entry_count, blz_algorithm
         else:
-            return properties, bucket_count, bucket_size, entry_count
+            return properties, header_length, bucket_count, bucket_size, entry_count
 
     @classmethod
     def get_archive_version(cls, input_data):
-        properties, _, _, _ = cls.get_archive_header(input_data)
+        properties, _, _, _, _ = cls.get_archive_header(input_data)
         return properties[cls.version_keyword]
 
     @classmethod
     def archive_uses_single_file(cls, input_data):
-        properties, _, _, _ = cls.get_archive_header(input_data)
+        properties, _, _, _, _ = cls.get_archive_header(input_data)
         return properties[cls.single_file_keyword]
 
     @classmethod
     def archive_uses_index_table(cls, input_data):
-        properties, _, _, _ = cls.get_archive_header(input_data)
+        properties, _, _, _, _ = cls.get_archive_header(input_data)
         return properties[cls.preserve_order_keyword]
 
     @classmethod
@@ -119,7 +121,7 @@ class BinGluArchive:
         if not cls.archive_uses_index_table(input_data):
             return None
 
-        properties, _, _, entry_count = cls.get_archive_header(input_data)
+        properties, _, _, _, entry_count = cls.get_archive_header(input_data)
         version = properties[cls.version_keyword]
         entry_count = int.from_bytes(input_data[6:8], 'little')
         entry_size = 14 if version > 3 else 12
@@ -193,7 +195,7 @@ class BinGluArchive:
     # TODO: binary search
     @classmethod
     def get_file_entry_by_name(cls, file_name, input_data):
-        properties, bucket_count, bucket_size, entry_count = cls.get_archive_header(input_data)
+        properties, _, bucket_count, bucket_size, entry_count = cls.get_archive_header(input_data)
         version = properties[cls.version_keyword]
         entry_size = 14 if version > 3 else 12
 
@@ -215,7 +217,7 @@ class BinGluArchive:
 
     @classmethod
     def _file_index_table_access(cls, input_data, table_index, unsafe_access, table_value):
-        properties, _, _, entry_count = cls.get_archive_header(input_data)
+        properties, _, _, _, entry_count = cls.get_archive_header(input_data)
 
         if not unsafe_access:
             index_table = cls._check_index_table(input_data)
@@ -288,6 +290,11 @@ class BinGluArchive:
             input_data_sub = input_data
         elif input_data_sub is None:
             raise BinGluError(102)
+
+        _, header_length, _, _, _ = self.get_archive_header(input_data)
+        if data_offset < header_length or (data_offset + data_length) > len(input_data_sub):
+            raise BinGluError(307)
+
         file_data = input_data_sub[data_offset : data_offset + data_length]
         return cls.decompress_data(compression_type, file_data)
 
@@ -307,7 +314,7 @@ class BinGluArchive:
         self.files = []
 
     def import_archive(self, input_data, input_data_sub = None):
-        properties, bucket_count, bucket_size, entry_count, blz_algorithm = self.get_archive_header(input_data, get_advanced = True)
+        properties, header_length, bucket_count, bucket_size, entry_count, blz_algorithm = self.get_archive_header(input_data, get_advanced = True)
 
         self.properties = properties
 
@@ -328,6 +335,10 @@ class BinGluArchive:
                 continue
 
             file_name, name_hash, compression_type, data_offset, data_length = entry_data
+
+            if data_offset < header_length or (data_offset + data_length) > len(input_data_sub):
+                raise BinGluError(307)
+
             file_data = input_data_sub[data_offset : data_offset + data_length]
 
             if compression_type == 'f':
