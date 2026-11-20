@@ -107,11 +107,12 @@ class MainWindow(QtWidgets.QMainWindow):
         checkboxes = QtWidgets.QWidget()
         checkboxes_layout = QtWidgets.QVBoxLayout(checkboxes)
         checkboxes_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(checkboxes, 2, 0)
+        main_layout.addWidget(checkboxes, 4, 0)
 
         toggles = [
             BinGluArchive.single_file_keyword,
             BinGluArchive.preserve_order_keyword,
+            BinGluArchive.pad_header_keyword,
         ]
 
         self.toggle_checkboxes = {}
@@ -127,8 +128,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.compression_selector = QtWidgets.QComboBox()
         self.compression_selector.addItems([str(i) for i in BinGluArchive.supported_compression_methods])
         self.compression_selector.currentIndexChanged.connect(self.set_compression)
-        main_layout.addWidget(self.compression_selector_text, 3, 0)
-        main_layout.addWidget(self.compression_selector, 4, 0)
+        main_layout.addWidget(self.compression_selector_text, 2, 0)
+        main_layout.addWidget(self.compression_selector, 3, 0)
 
         self.file_tree = QtWidgets.QTreeWidget()
         self.file_tree.setColumnCount(2)
@@ -191,6 +192,11 @@ class MainWindow(QtWidgets.QMainWindow):
             BinGluArchive.preserve_order_keyword: [
                 self.tr("Preserve File Order"),
                 self.tr("Creates an additional table that tracks the index of each file in the archive. Necessary for archives that can use an index to find a file."),
+            ],
+            # TODO: get actual padding amount
+            BinGluArchive.pad_header_keyword: [
+                self.tr("Pad Header to 256 Bytes"),
+                self.tr("Can help enforce byte alignment if the context for the archive requires it."),
             ],
         }
 

@@ -77,6 +77,7 @@ class BinGluArchive:
 
     supported_compression_methods = [None, 'm', 'f0', 'f1', 'b0', 'b1', 'b2']
     compression_method_keyword = "compression_method"
+    pad_header_keyword = "pad_header"
 
     @classmethod
     def get_archive_header(cls, input_data, get_advanced = False):
@@ -309,6 +310,7 @@ class BinGluArchive:
 
         self.advanced_properties = {
             self.compression_method_keyword: 'b0',
+            self.pad_header_keyword:         False,
         }
 
         self.files = []
@@ -372,6 +374,8 @@ class BinGluArchive:
             self.files.append(file_sorting[file])
 
         self.advanced_properties[self.compression_method_keyword] = compression_method
+        # TODO: get actual padding amount
+        self.advanced_properties[self.pad_header_keyword] = (header_length & 0xFF) == 0
 
     def _check_file_index(self, file_index):
         try:
@@ -558,8 +562,14 @@ class BinGluArchive:
 
         header_length = 16 + (entry_size * entry_count) + len(name_section)
         if self.properties[self.preserve_order_keyword]: header_length += entry_count * 4
-        extra_padding = (4 - (header_length % 4)) % 4
+
+        pad_amount = 4
+        # TODO: get actual padding amount
+        if self.advanced_properties[self.pad_header_keyword]:
+            pad_amount = 0x100
+        extra_padding = (pad_amount - (header_length % pad_amount)) % pad_amount
         header_length += extra_padding
+
         name_section.extend(b"\xFF" * extra_padding)
 
         # data section
