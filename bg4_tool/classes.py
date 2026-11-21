@@ -1,5 +1,5 @@
 import struct
-from enum import IntEnum
+from enum import Enum
 
 from bg4_tool.script import decompress_lz1x, decompress_blz
 
@@ -13,7 +13,7 @@ def compress_lz1x(method, data):
     print(f"attempted to forward compress data with method {method}")
     return data
 
-class BinGlu4Modes(IntEnum):
+class BinGlu4Modes(Enum):
     BINARY_SEARCH      = 3
     SAFE_BUCKET_SEARCH = 4
     SAFE_BINARY_SEARCH = 5
@@ -98,7 +98,7 @@ class BinGluArchive:
         properties_raw, entry_count, header_length, bucket_count, bucket_size = struct.unpack("<HHIHH", input_data[4:16])
 
         properties = {}
-        properties[cls.mode_keyword] = properties_raw & 0x00FF
+        properties[cls.mode_keyword] = BinGlu4Modes(properties_raw & 0x00FF)
 
         properties[cls.single_file_keyword]    = (properties_raw & 0x0100) != 0
         properties[cls.preserve_order_keyword] = (properties_raw & 0x0200) != 0
@@ -258,7 +258,7 @@ class BinGluArchive:
 
     @classmethod
     def get_file_entry_data(cls, file_entry, input_data):
-        mode = input_data[4]
+        mode = BinGlu4Modes(input_data[4])
         entry_count = int.from_bytes(input_data[6:8], 'little')
         mode_properties = cls.get_archive_mode_properties(mode)
         entry_struct, entry_size = mode_properties["entry_struct"], mode_properties["entry_size"]
@@ -691,7 +691,7 @@ class BinGluArchive:
 
         output_file.extend(self.header_magic)
 
-        properties = mode
+        properties = mode.value
 
         compression_method = self.advanced_properties[self.compression_method_keyword]
         blz_algorithm = 0

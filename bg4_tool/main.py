@@ -181,7 +181,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         for i, mode in enumerate(BinGluArchive.supported_modes):
             name_string, desc_string = modes[mode]
-            self.mode_selector.setItemText(i, self.tr("Mode {0}: {1}").format(mode, name_string))
+            self.mode_selector.setItemText(i, self.tr("Mode {0}: {1}").format(mode.value, name_string))
             self.mode_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
 
         toggles = {
