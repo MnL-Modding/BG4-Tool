@@ -128,6 +128,16 @@ class BinGluArchive:
         return properties[cls.preserve_order_keyword]
 
     @classmethod
+    def get_archive_mode_properties(cls, mode):
+        master_dict = {
+            BinGlu4Modes.BINARY_SEARCH:      {"entry_struct": "<III",  "entry_size": 12},
+            BinGlu4Modes.SAFE_BUCKET_SEARCH: {"entry_struct": "<IIIH", "entry_size": 14},
+            BinGlu4Modes.SAFE_BINARY_SEARCH: {"entry_struct": "<IIIH", "entry_size": 14},
+        }
+
+        return master_dict.get(mode)
+
+    @classmethod
     def _check_index_table(cls, input_data):
         if not cls.archive_uses_index_table(input_data):
             return None
@@ -135,7 +145,7 @@ class BinGluArchive:
         properties, _, _, _, entry_count = cls.get_archive_header(input_data)
         mode = properties[cls.mode_keyword]
         entry_count = int.from_bytes(input_data[6:8], 'little')
-        entry_size = 14 if mode > 3 else 12
+        entry_size = cls.get_archive_mode_properties(mode)["entry_size"]
 
         index_table_offset = 16 + (entry_count * entry_size)
         invalid_files = 0
@@ -208,7 +218,7 @@ class BinGluArchive:
     def get_file_entry_by_name(cls, file_name, input_data):
         properties, _, bucket_count, bucket_size, entry_count = cls.get_archive_header(input_data)
         mode = properties[cls.mode_keyword]
-        entry_size = 14 if mode > 3 else 12
+        entry_size = cls.get_archive_mode_properties(mode)["entry_size"]
 
         name_hash = cls.get_name_hash(file_name)
         first_entry = 0
@@ -239,25 +249,26 @@ class BinGluArchive:
 
         mode = properties[cls.mode_keyword]
         entry_count = int.from_bytes(input_data[6:8], 'little')
-        entry_size = 14 if mode > 3 else 12
+        entry_size = cls.get_archive_mode_properties(mode)["entry_size"]
 
         index_table_offset = 16 + (entry_count * entry_size)
         file_index_offset = index_table_offset + [0, 2][table_value] + (table_index * 4)
 
         return int.from_bytes(input_data[file_index_offset : file_index_offset + 2], 'little')
 
-    @staticmethod
-    def get_file_entry_data(file_entry, input_data):
+    @classmethod
+    def get_file_entry_data(cls, file_entry, input_data):
         mode = input_data[4]
         entry_count = int.from_bytes(input_data[6:8], 'little')
-        entry_struct, entry_size = ("<IIIH", 14) if mode > 3 else ("<III", 12)
+        mode_properties = cls.get_archive_mode_properties(mode)
+        entry_struct, entry_size = mode_properties["entry_struct"], mode_properties["entry_size"]
 
         if file_entry >= entry_count or file_entry < 0:
             raise BinGluError(303)
 
         entry_offset = 16 + (file_entry * entry_size)
         raw_data = struct.unpack(entry_struct, input_data[entry_offset : entry_offset + entry_size])
-        data_offset, data_length, name_hash, name_offset = raw_data + (None,) if len(raw_data) == 3 else raw_data
+        data_offset, data_length, name_hash, name_offset = raw_data + ((None,) * (4 - len(raw_data)))
 
         compression_value = (data_offset & 0xC0000000) >> 30
         compression_type = {1: 'f', 2: 'b'}.get(compression_value)
@@ -314,9 +325,9 @@ class BinGluArchive:
 
     def __init__(self):
         # hi   ------>   lo
-        # xxxxxxPS VVVVVVVV
+        # xxxxxxPS MMMMMMMM
         self.properties = {
-            self.mode_keyword:        4,
+            self.mode_keyword:           4,
             self.single_file_keyword:    True,
             self.preserve_order_keyword: False,
         }
@@ -535,7 +546,8 @@ class BinGluArchive:
 
 
     def export_archive(self):
-        if self.properties[self.mode_keyword] != 4:
+        mode = self.properties[self.mode_keyword]
+        if mode != 4:
             bucket_count = 1
             bucket_size = len(self.files)
         else:
@@ -548,7 +560,7 @@ class BinGluArchive:
         # name section
         name_section = bytearray()
 
-        if self.properties[self.mode_keyword] == 4:
+        if mode == 4:
             name_section.extend(self.invalid_name.encode("ascii") + b'\0')
 
         hash_dict = {}
@@ -561,18 +573,18 @@ class BinGluArchive:
                 raise BinGluError(206, [file_index])
 
             if hsh in hash_dict.keys():
-                if not self.properties[self.mode_keyword] > 3:
+                if not mode > 3:
                     raise BinGluError(202, [hash_dict[hsh], file_index])
                 hash_collisions.add(hsh)
             hash_dict[hsh] = file_index
 
             files[file_index] = {"name_offset": len(name_section), "name_hash": hsh}
-            if self.properties[self.mode_keyword] > 3:
+            if mode > 3:
                 if name is None:
                     raise BinGluError(205, [file_index])
                 name_section.extend(name.encode('ascii') + b'\0')
 
-        entry_size = 14 if self.properties[self.mode_keyword] > 3 else 12
+        entry_size = self.get_archive_mode_properties(mode)["entry_size"]
 
         header_length = 16 + (entry_size * entry_count) + len(name_section)
         if self.properties[self.preserve_order_keyword]: header_length += entry_count * 4
@@ -643,6 +655,11 @@ class BinGluArchive:
         for _ in range(entry_count):
             order_table.append([0xFFFF, 0xFFFF])
 
+        # calculate automatically how many elements are in the struct
+        entry_struct = self.get_archive_mode_properties(mode)["entry_struct"]
+        dummy_bytes = bytes(struct.calcsize(entry_struct))
+        entry_elements = len(struct.unpack(entry_struct, dummy_bytes))
+
         global_index = 0
         for bucket in buckets:
             while len(bucket) < bucket_size:
@@ -650,13 +667,11 @@ class BinGluArchive:
 
             for file in sorted(bucket, key = lambda bucket_file: bucket_file["name_hash"]):
                 name_offset = file["name_offset"]
-                is_null = (self.properties[self.mode_keyword] != 4) and name_offset == 0
+                is_null = (mode != 4) and name_offset == 0
                 if self.properties[self.preserve_order_keyword] and not is_null: name_offset += entry_count * 4
 
-                if self.properties[self.mode_keyword] > 3:
-                    hash_table.extend(struct.pack("<IIIH", file["data_offset"], file["data_length"], file["name_hash"], name_offset))
-                else:
-                    hash_table.extend(struct.pack("<III", file["data_offset"], file["data_length"], file["name_hash"]))
+                entry_data = [file["data_offset"], file["data_length"], file["name_hash"], name_offset]
+                hash_table.extend(struct.pack(entry_struct, *entry_data[:entry_elements]))
 
                 file_index = file["file_index"]
                 if file_index is not None:
@@ -676,7 +691,7 @@ class BinGluArchive:
 
         output_file.extend(self.header_magic)
 
-        properties = self.properties[self.mode_keyword]
+        properties = mode
 
         compression_method = self.advanced_properties[self.compression_method_keyword]
         blz_algorithm = 0
@@ -687,7 +702,7 @@ class BinGluArchive:
         if self.properties[self.single_file_keyword]:    properties |= 0x0100
         if self.properties[self.preserve_order_keyword]: properties |= 0x0200
 
-        if self.properties[self.mode_keyword] != 4:
+        if mode != 4:
             bucket_count, bucket_size = 0, 0
 
         output_file.extend(struct.pack("<HHIHH", properties, entry_count, header_length, bucket_count, bucket_size))
