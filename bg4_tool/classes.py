@@ -258,8 +258,8 @@ class BinGluArchive:
 
     @classmethod
     def get_file_entry_data(cls, file_entry, input_data):
-        mode = BinGlu4Modes(input_data[4])
-        entry_count = int.from_bytes(input_data[6:8], 'little')
+        properties, _, _, _, entry_count = cls.get_archive_header(input_data)
+        mode = properties[cls.mode_keyword]
         mode_properties = cls.get_archive_mode_properties(mode)
         entry_struct, entry_size = mode_properties["entry_struct"], mode_properties["entry_size"]
 
