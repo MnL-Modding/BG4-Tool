@@ -103,7 +103,7 @@ class BinGluArchive:
         properties[cls.single_file_keyword]    = (properties_raw & 0x0100) != 0
         properties[cls.preserve_order_keyword] = (properties_raw & 0x0200) != 0
 
-        if entry_count != (bucket_count * bucket_size) and properties[cls.mode_keyword] == 4:
+        if entry_count != (bucket_count * bucket_size) and properties[cls.mode_keyword] == BinGlu4Modes.SAFE_BUCKET_SEARCH:
             raise BinGluError(101)
 
         if get_advanced:
@@ -222,7 +222,7 @@ class BinGluArchive:
 
         name_hash = cls.get_name_hash(file_name)
         first_entry = 0
-        if mode == 4:
+        if mode == BinGlu4Modes.SAFE_BUCKET_SEARCH:
             first_entry = (name_hash % bucket_count) * bucket_size
             entry_count = bucket_size
         
@@ -327,7 +327,7 @@ class BinGluArchive:
         # hi   ------>   lo
         # xxxxxxPS MMMMMMMM
         self.properties = {
-            self.mode_keyword:           4,
+            self.mode_keyword:           BinGlu4Modes.SAFE_BUCKET_SEARCH,
             self.single_file_keyword:    True,
             self.preserve_order_keyword: False,
         }
@@ -547,7 +547,7 @@ class BinGluArchive:
 
     def export_archive(self):
         mode = self.properties[self.mode_keyword]
-        if mode != 4:
+        if mode != BinGlu4Modes.SAFE_BUCKET_SEARCH:
             bucket_count = 1
             bucket_size = len(self.files)
         else:
@@ -560,7 +560,7 @@ class BinGluArchive:
         # name section
         name_section = bytearray()
 
-        if mode == 4:
+        if mode == BinGlu4Modes.SAFE_BUCKET_SEARCH:
             name_section.extend(self.invalid_name.encode("ascii") + b'\0')
 
         hash_dict = {}
@@ -573,13 +573,13 @@ class BinGluArchive:
                 raise BinGluError(206, [file_index])
 
             if hsh in hash_dict.keys():
-                if not mode > 3:
+                if mode != BinGlu4Modes.SAFE_BUCKET_SEARCH and mode != BinGlu4Modes.SAFE_BINARY_SEARCH:
                     raise BinGluError(202, [hash_dict[hsh], file_index])
                 hash_collisions.add(hsh)
             hash_dict[hsh] = file_index
 
             files[file_index] = {"name_offset": len(name_section), "name_hash": hsh}
-            if mode > 3:
+            if mode == BinGlu4Modes.SAFE_BUCKET_SEARCH or mode == BinGlu4Modes.SAFE_BINARY_SEARCH:
                 if name is None:
                     raise BinGluError(205, [file_index])
                 name_section.extend(name.encode('ascii') + b'\0')
@@ -667,7 +667,7 @@ class BinGluArchive:
 
             for file in sorted(bucket, key = lambda bucket_file: bucket_file["name_hash"]):
                 name_offset = file["name_offset"]
-                is_null = (mode != 4) and name_offset == 0
+                is_null = (mode != BinGlu4Modes.SAFE_BUCKET_SEARCH) and name_offset == 0
                 if self.properties[self.preserve_order_keyword] and not is_null: name_offset += entry_count * 4
 
                 entry_data = [file["data_offset"], file["data_length"], file["name_hash"], name_offset]
@@ -702,7 +702,7 @@ class BinGluArchive:
         if self.properties[self.single_file_keyword]:    properties |= 0x0100
         if self.properties[self.preserve_order_keyword]: properties |= 0x0200
 
-        if mode != 4:
+        if mode != BinGlu4Modes.SAFE_BUCKET_SEARCH:
             bucket_count, bucket_size = 0, 0
 
         output_file.extend(struct.pack("<HHIHH", properties, entry_count, header_length, bucket_count, bucket_size))
