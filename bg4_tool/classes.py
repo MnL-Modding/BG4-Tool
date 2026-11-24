@@ -13,6 +13,15 @@ def compress_lz1x(method, data):
     print(f"attempted to forward compress data with method {method}")
     return data
 
+# TODO: implement rlz compression/decompression when mnllib is hooked into this class
+def compress_rlz(data):
+    print(f"attempted to rle-lzss compress data")
+    return data
+
+def decompress_rlz(data):
+    print(f"attempted to rle-lzss decompress data")
+    return data
+
 class BinGlu4Modes(Enum):
     BINARY_SEARCH      = 3
     SAFE_BUCKET_SEARCH = 4
@@ -190,10 +199,14 @@ class BinGluArchive:
         if compression_type is None:
             return data
 
-        method = int(compression_type[1])
+        method = None
+        if len(compression_type) > 1:
+            method = int(compression_type[1])
+
         match compression_type[0]:
             case 'f': data = compress_lz1x(method, data)
             case 'b': data = compress_blz(method, data)
+            case 'r': data = compress_rlz(data)
             case _: pass
 
         return data
@@ -209,6 +222,7 @@ class BinGluArchive:
         match compression_type[0]:
             case 'f': data = decompress_lz1x(data)
             case 'b': data = decompress_blz(data)
+            case 'r': data = decompress_rlz(data)
             case _: pass
 
         return data
