@@ -1,8 +1,6 @@
 import struct
 from enum import Enum
 
-from bg4_tool.script import decompress_lz1x, decompress_blz
-
 # TODO: add blz compression
 def compress_blz(method, data):
     print(f"attempted to backward compress data with method {method}")
@@ -22,7 +20,10 @@ def decompress_rlz(data):
     print(f"attempted to rle-lzss decompress data")
     return data
 
-class BinGlu4Modes(Enum):
+class BinGluModes(Enum):
+    SIMPLE_INDEX       = 0
+    PREFIXED_INDEX     = 1
+    SAFE_INDEX         = 2
     BINARY_SEARCH      = 3
     SAFE_BUCKET_SEARCH = 4
     SAFE_BINARY_SEARCH = 5
@@ -52,6 +53,7 @@ class BinGluError(Exception):
     Code 305: This archive does not support being accessed via index.
     Code 306: Requested compression method is not supported.
     Code 307: Requested file data is outside of the data section.
+    Code 308: This archive does not support being accessed via name hashing.
     """
     def __init__(self, error_code, file_indices = []):
         message = {
@@ -76,108 +78,71 @@ class BinGluError(Exception):
             305: "Access Error: Indexed Access Not Supported",
             306: "Access Error: Unsupported Compression Method",
             307: "Access Error: Out of Bounds Read",
+            308: "Access Error: Hashed Access Not Supported",
         }.get(error_code, f"Error Code {error_code} Not Implemented")
         super().__init__(message)
         self.error_code = error_code
         self.file_indices = file_indices
 
-class BinGluArchive:
-    header_magic = b"BG4\0"
-    invalid_name = "(invalid)"
 
-    supported_modes = [
-        BinGlu4Modes.BINARY_SEARCH,
-        BinGlu4Modes.SAFE_BUCKET_SEARCH,
-        BinGlu4Modes.SAFE_BINARY_SEARCH,
+
+class BinGluArchive:
+    supported_compression_methods = []
+    implemented_compression_methods = [None, 'm', 'f0', 'f1', 'b0', 'b1', 'b2', 'r']
+    usable_compression_methods = ['f0', 'f1', 'b0', 'b1', 'b2', 'r']
+
+    supported_modes = []
+    implemented_modes = [
+        # BinGluModes.SIMPLE_INDEX,
+        # BinGluModes.PREFIXED_INDEX,
+        # BinGluModes.SAFE_INDEX,
+        BinGluModes.BINARY_SEARCH,
+        BinGluModes.SAFE_BUCKET_SEARCH,
+        BinGluModes.SAFE_BINARY_SEARCH,
     ]
+
     mode_keyword = "mode"
     single_file_keyword = "single_file"
     preserve_order_keyword = "preserve_order"
 
-    supported_compression_methods = [None, 'm', 'f0', 'f1', 'b0', 'b1', 'b2']
     compression_method_keyword = "compression_method"
     pad_header_keyword = "pad_header"
 
     @classmethod
-    def get_archive_header(cls, input_data, get_advanced = False):
-        magic = input_data[:4]
-        if magic != cls.header_magic:
-            raise BinGluError(101)
-        
-        properties_raw, entry_count, header_length, bucket_count, bucket_size = struct.unpack("<HHIHH", input_data[4:16])
-
-        properties = {}
-        properties[cls.mode_keyword] = BinGlu4Modes(properties_raw & 0x00FF)
-
-        properties[cls.single_file_keyword]    = (properties_raw & 0x0100) != 0
-        properties[cls.preserve_order_keyword] = (properties_raw & 0x0200) != 0
-
-        if entry_count != (bucket_count * bucket_size) and properties[cls.mode_keyword] == BinGlu4Modes.SAFE_BUCKET_SEARCH:
-            raise BinGluError(101)
-
-        if get_advanced:
-            blz_algorithm = (properties_raw & 0xC000) >> 14
-            return properties, header_length, bucket_count, bucket_size, entry_count, blz_algorithm
-        else:
-            return properties, header_length, bucket_count, bucket_size, entry_count
-
-    @classmethod
     def get_archive_mode(cls, input_data):
-        properties, _, _, _, _ = cls.get_archive_header(input_data)
-        return properties[cls.mode_keyword]
+        raise BinGluError(300)
 
     @classmethod
     def archive_uses_single_file(cls, input_data):
-        properties, _, _, _, _ = cls.get_archive_header(input_data)
-        return properties[cls.single_file_keyword]
+        raise BinGluError(300)
 
     @classmethod
     def archive_uses_index_table(cls, input_data):
-        properties, _, _, _, _ = cls.get_archive_header(input_data)
-        return properties[cls.preserve_order_keyword]
+        raise BinGluError(300)
 
     @classmethod
     def get_archive_mode_properties(cls, mode):
-        master_dict = {
-            BinGlu4Modes.BINARY_SEARCH:      {"entry_struct": "<III",  "entry_size": 12},
-            BinGlu4Modes.SAFE_BUCKET_SEARCH: {"entry_struct": "<IIIH", "entry_size": 14},
-            BinGlu4Modes.SAFE_BINARY_SEARCH: {"entry_struct": "<IIIH", "entry_size": 14},
-        }
-
-        return master_dict.get(mode)
+        raise BinGluError(300)
 
     @classmethod
-    def _check_index_table(cls, input_data):
-        if not cls.archive_uses_index_table(input_data):
-            return None
+    def get_file_entry_by_name(cls, file_name, input_data):
+        raise BinGluError(300)
 
-        properties, _, _, _, entry_count = cls.get_archive_header(input_data)
-        mode = properties[cls.mode_keyword]
-        entry_count = int.from_bytes(input_data[6:8], 'little')
-        entry_size = cls.get_archive_mode_properties(mode)["entry_size"]
+    @classmethod
+    def get_file_entry_by_index(cls, file_index, input_data, unsafe_access = False):
+        raise BinGluError(300)
 
-        index_table_offset = 16 + (entry_count * entry_size)
-        invalid_files = 0
-        for i in range(entry_count):
-            entry_index_offset = index_table_offset + (i * 4)
-            file_index = int.from_bytes(input_data[entry_index_offset + 0 : entry_index_offset + 2], 'little')
-            if file_index == 0xFFFF:
-                invalid_files += 1
-                file_entry_offset = 16 + (entry_size * i)
-                if (int.from_bytes(input_data[file_entry_offset + 4 : file_entry_offset + 8], 'little') & 0x80000000) == 0:
-                    return False
-                continue
+    @classmethod
+    def get_file_index_by_entry(cls, file_entry, input_data, unsafe_access = False):
+        raise BinGluError(300)
 
-            file_index_offset = index_table_offset + (file_index * 4)
-            if i != int.from_bytes(input_data[file_index_offset + 2 : file_index_offset + 4], 'little'):
-                return False
+    @classmethod
+    def extract_file_data_by_name(cls, file_name, input_data, input_data_sub = None):
+        raise BinGluError(300)
 
-        for i in range(invalid_files):
-            file_index_offset = index_table_offset + ((entry_count - (i + 1)) * 4)
-            if 0xFFFF != int.from_bytes(input_data[file_index_offset + 2 : file_index_offset + 4], 'little'):
-                return False
-
-        return True
+    @classmethod
+    def extract_file_data_by_index(cls, file_index, input_data, input_data_sub = None):
+        raise BinGluError(300)
 
     @staticmethod
     def get_name_hash(name):
@@ -193,11 +158,11 @@ class BinGluArchive:
 
     @classmethod
     def compress_data(cls, compression_type, data):
-        if compression_type not in cls.supported_compression_methods:
-            raise BinGluError(306)
-
         if compression_type is None:
             return data
+
+        if compression_type not in cls.usable_compression_methods:
+            raise BinGluError(306)
 
         method = None
         if len(compression_type) > 1:
@@ -213,11 +178,11 @@ class BinGluArchive:
 
     @classmethod
     def decompress_data(cls, compression_type, data):
-        if compression_type not in cls.supported_compression_methods:
-            raise BinGluError(306)
-
         if compression_type is None:
             return data
+
+        if compression_type not in cls.usable_compression_methods:
+            raise BinGluError(306)
 
         match compression_type[0]:
             case 'f': data = decompress_lz1x(data)
@@ -227,121 +192,12 @@ class BinGluArchive:
 
         return data
 
-    # TODO: binary search
-    @classmethod
-    def get_file_entry_by_name(cls, file_name, input_data):
-        properties, _, bucket_count, bucket_size, entry_count = cls.get_archive_header(input_data)
-        mode = properties[cls.mode_keyword]
-        entry_size = cls.get_archive_mode_properties(mode)["entry_size"]
-
-        name_hash = cls.get_name_hash(file_name)
-        first_entry = 0
-        if mode == BinGlu4Modes.SAFE_BUCKET_SEARCH:
-            first_entry = (name_hash % bucket_count) * bucket_size
-            entry_count = bucket_size
-        
-        print(first_entry)
-
-    @classmethod
-    def get_file_entry_by_index(cls, file_index, input_data, unsafe_access = False):
-        return cls._file_index_table_access(input_data, file_index, unsafe_access, 1)
-
-    @classmethod
-    def get_file_index_by_entry(cls, file_entry, input_data, unsafe_access = False):
-        return cls._file_index_table_access(input_data, file_entry, unsafe_access, 0)
-
-    @classmethod
-    def _file_index_table_access(cls, input_data, table_index, unsafe_access, table_value):
-        properties, _, _, _, entry_count = cls.get_archive_header(input_data)
-
-        if not unsafe_access:
-            index_table = cls._check_index_table(input_data)
-            if index_table is None:
-                raise BinGluError(305)
-            elif not index_table:
-                raise BinGluError(103)
-
-        mode = properties[cls.mode_keyword]
-        entry_count = int.from_bytes(input_data[6:8], 'little')
-        entry_size = cls.get_archive_mode_properties(mode)["entry_size"]
-
-        index_table_offset = 16 + (entry_count * entry_size)
-        file_index_offset = index_table_offset + [0, 2][table_value] + (table_index * 4)
-
-        return int.from_bytes(input_data[file_index_offset : file_index_offset + 2], 'little')
-
-    @classmethod
-    def get_file_entry_data(cls, file_entry, input_data):
-        properties, _, _, _, entry_count = cls.get_archive_header(input_data)
-        mode = properties[cls.mode_keyword]
-        mode_properties = cls.get_archive_mode_properties(mode)
-        entry_struct, entry_size = mode_properties["entry_struct"], mode_properties["entry_size"]
-
-        if file_entry >= entry_count or file_entry < 0:
-            raise BinGluError(303)
-
-        entry_offset = 16 + (file_entry * entry_size)
-        raw_data = struct.unpack(entry_struct, input_data[entry_offset : entry_offset + entry_size])
-        data_offset, data_length, name_hash, name_offset = raw_data + ((None,) * (4 - len(raw_data)))
-
-        compression_value = (data_offset & 0xC0000000) >> 30
-        compression_type = {1: 'f', 2: 'b'}.get(compression_value)
-        data_offset &= 0x3FFFFFFF
-
-        is_invalid = ((data_length & 0x80000000) != 0) or ((data_offset & 0xC0000000) == 0xC0000000)
-        data_length &= 0x3FFFFFFF
-
-        if is_invalid:
-            return None
-
-        if name_offset is not None:
-            name_section_offset = 16 + (entry_count * entry_size)
-            read_pointer = name_section_offset + name_offset
-            file_name = ""
-            while(True):
-                next_char = input_data[read_pointer : read_pointer + 1]
-                if next_char == b'\0':
-                    break
-                file_name += next_char.decode("ascii")
-                read_pointer += 1
-        else:
-            file_name = None
-
-        return file_name, name_hash, compression_type, data_offset, data_length
-
-    @classmethod
-    def extract_file_data_by_name(cls, file_name, input_data, input_data_sub = None):
-        entry_index = cls.get_file_entry_by_name(file_name, input_data)
-        return cls._extract_file_data_by_entry(entry_index, input_data, input_data_sub)
-
-    @classmethod
-    def extract_file_data_by_index(cls, file_index, input_data, input_data_sub = None):
-        entry_index = cls.get_file_entry_by_index(file_index, input_data)
-        return cls._extract_file_data_by_entry(entry_index, input_data, input_data_sub)
-    
-    @classmethod
-    def _extract_file_data_by_entry(cls, entry_index, input_data, input_data_sub = None):
-        _, _, compression_type, data_offset, data_length = cls.get_file_entry_data(entry_index, input_data)
-        _, header_length, _, _, _ = self.get_archive_header(input_data)
-
-        header_length_adjusted = 0
-        if cls.archive_uses_single_file(input_data):
-            header_length_adjusted = header_length
-            input_data_sub = input_data
-        elif input_data_sub is None:
-            raise BinGluError(102)
-
-        if (data_offset < header_length_adjusted) or ((data_offset + data_length) > len(input_data_sub)):
-            raise BinGluError(307)
-
-        file_data = input_data_sub[data_offset : data_offset + data_length]
-        return cls.decompress_data(compression_type, file_data)
-
     def __init__(self):
-        # hi   ------>   lo
-        # xxxxxxPS MMMMMMMM
+        default_mode = BinGluModes.SAFE_BUCKET_SEARCH
+        self.try_change_mode(default_mode)
+
         self.properties = {
-            self.mode_keyword:           BinGlu4Modes.SAFE_BUCKET_SEARCH,
+            self.mode_keyword:           default_mode,
             self.single_file_keyword:    True,
             self.preserve_order_keyword: False,
         }
@@ -354,67 +210,33 @@ class BinGluArchive:
         self.files = []
 
     def import_archive(self, input_data, input_data_sub = None):
-        properties, header_length, bucket_count, bucket_size, entry_count, blz_algorithm = self.get_archive_header(input_data, get_advanced = True)
+        raise BinGluError(100)
 
-        self.properties = properties
+    def export_archive(self, input_data, input_data_sub = None):
+        raise BinGluError(200)
 
-        header_length_adjusted = 0
-        if not self.properties[self.single_file_keyword]:
-            if input_data_sub is None:
-                raise BinGluError(102)
-        else:
-            header_length_adjusted = header_length
-            input_data_sub = input_data
+    def import_archive_general(self, input_data, input_data_sub = None):
+        for test_class in [BG4Archive, BG3Archive, BG2Archive, BGArchive]:
+            try:
+                self.__class__ = test_class
+                test_class.import_archive(self, input_data, input_data_sub)
+                return
+            except BinGluError as e:
+                if e.error_code != 101 and e.error_code != 100:
+                    raise e
+        
+        raise BinGluError(101)
 
-        file_sorting = {}
-        sort_by_index = self._check_index_table(input_data)
-        compression_method = None
-        compression_confirmation = 0
+    def try_change_mode(self, mode):
+        if mode not in BinGluArchive.implemented_modes:
+            raise BinGluError(304)
 
-        for i in range(entry_count):
-            entry_data = self.get_file_entry_data(i, input_data)
-            if entry_data is None:
-                continue
-
-            file_name, name_hash, compression_type, data_offset, data_length = entry_data
-
-            if (data_offset < header_length_adjusted) or ((data_offset + data_length) > len(input_data_sub)):
-                raise BinGluError(307)
-
-            file_data = input_data_sub[data_offset : data_offset + data_length]
-
-            if compression_type == 'f':
-                lz_type = file_data[0]
-                comp_type = {
-                    0x10: 0,
-                    0x11: 1,
-                }[lz_type]
-                compression_type += str(comp_type)
-            elif compression_type == 'b':
-                compression_type += str(blz_algorithm)
-
-            file = {"file_name": file_name, "name_hash": name_hash if file_name is None else None, "compression_type": compression_type, "data": file_data, "data_compression_type": compression_type}
-
-            if sort_by_index:
-                file_index = self.get_file_index_by_entry(i, input_data, unsafe_access = True) # bypass slow table check since it was already checked once
-                file_sorting[file_index] = file
-            else:
-                file_sorting[(data_offset, data_length)] = file
-
-            if compression_type is not None:
-                if compression_method != compression_type and compression_method != 'm':
-                    if compression_confirmation == 0:
-                        compression_method = compression_type
-                    else:
-                        compression_method = 'm'
-
-                compression_confirmation += 1
-
-        for file in sorted(file_sorting.keys()):
-            self.files.append(file_sorting[file])
-
-        self.advanced_properties[self.compression_method_keyword] = compression_method
-        self.advanced_properties[self.pad_header_keyword] = (header_length & 0x7F) == 0
+        for test_class in [BG4Archive, BG3Archive, BG2Archive, BGArchive]:
+            if mode in test_class.supported_modes:
+                self.__class__ = test_class
+                return
+        
+        raise BinGluError(304)
 
     def _check_file_index(self, file_index):
         try:
@@ -438,7 +260,7 @@ class BinGluArchive:
         if set_property not in self.properties and set_property not in self.advanced_properties:
             raise BinGluError(301)
         if set_property == self.mode_keyword and value not in self.supported_modes:
-            raise BinGluError(304)
+            self.try_change_mode(value)
         if set_property == self.compression_method_keyword and value not in self.supported_compression_methods:
             raise BinGluError(306)
 
@@ -521,6 +343,274 @@ class BinGluArchive:
 
     # TODO: let the user restore names to files that only have a hash or index
 
+
+
+class BG4Archive(BinGluArchive):
+    header_magic = b"BG4\0"
+    invalid_name = "(invalid)"
+
+    supported_compression_methods = [None, 'm', 'f0', 'f1', 'b0', 'b1', 'b2']
+    supported_modes = [
+        BinGluModes.BINARY_SEARCH,
+        BinGluModes.SAFE_BUCKET_SEARCH,
+        BinGluModes.SAFE_BINARY_SEARCH,
+    ]
+
+    @classmethod
+    def _get_archive_header(cls, input_data, get_advanced = False):
+        magic = input_data[:4]
+        if magic != cls.header_magic:
+            raise BinGluError(101)
+        
+        properties_raw, entry_count, header_length, bucket_count, bucket_size = struct.unpack("<HHIHH", input_data[4:16])
+
+        # hi   ------>   lo
+        # xxxxxxPS MMMMMMMM
+        properties = {}
+        properties[cls.mode_keyword] = BinGluModes(properties_raw & 0x00FF)
+
+        properties[cls.single_file_keyword]    = (properties_raw & 0x0100) != 0
+        properties[cls.preserve_order_keyword] = (properties_raw & 0x0200) != 0
+
+        if entry_count != (bucket_count * bucket_size) and properties[cls.mode_keyword] == BinGluModes.SAFE_BUCKET_SEARCH:
+            raise BinGluError(101)
+
+        if get_advanced:
+            blz_algorithm = (properties_raw & 0xC000) >> 14
+            return properties, header_length, bucket_count, bucket_size, entry_count, blz_algorithm
+        else:
+            return properties, header_length, bucket_count, bucket_size, entry_count
+
+    @classmethod
+    def get_archive_mode(cls, input_data):
+        properties, _, _, _, _ = cls._get_archive_header(input_data)
+        return properties[cls.mode_keyword]
+
+    @classmethod
+    def archive_uses_single_file(cls, input_data):
+        properties, _, _, _, _ = cls._get_archive_header(input_data)
+        return properties[cls.single_file_keyword]
+
+    @classmethod
+    def archive_uses_index_table(cls, input_data):
+        properties, _, _, _, _ = cls._get_archive_header(input_data)
+        return properties[cls.preserve_order_keyword]
+
+    @classmethod
+    def get_archive_mode_properties(cls, mode):
+        master_dict = {
+            BinGluModes.BINARY_SEARCH:      {"entry_struct": "<III",  "entry_size": 12},
+            BinGluModes.SAFE_BUCKET_SEARCH: {"entry_struct": "<IIIH", "entry_size": 14},
+            BinGluModes.SAFE_BINARY_SEARCH: {"entry_struct": "<IIIH", "entry_size": 14},
+        }
+
+        return master_dict.get(mode)
+
+    @classmethod
+    def _check_index_table(cls, input_data):
+        if not cls.archive_uses_index_table(input_data):
+            return None
+
+        properties, _, _, _, entry_count = cls._get_archive_header(input_data)
+        mode = properties[cls.mode_keyword]
+        entry_count = int.from_bytes(input_data[6:8], 'little')
+        entry_size = cls.get_archive_mode_properties(mode)["entry_size"]
+
+        index_table_offset = 16 + (entry_count * entry_size)
+        invalid_files = 0
+        for i in range(entry_count):
+            entry_index_offset = index_table_offset + (i * 4)
+            file_index = int.from_bytes(input_data[entry_index_offset + 0 : entry_index_offset + 2], 'little')
+            if file_index == 0xFFFF:
+                invalid_files += 1
+                file_entry_offset = 16 + (entry_size * i)
+                if (int.from_bytes(input_data[file_entry_offset + 4 : file_entry_offset + 8], 'little') & 0x80000000) == 0:
+                    return False
+                continue
+
+            file_index_offset = index_table_offset + (file_index * 4)
+            if i != int.from_bytes(input_data[file_index_offset + 2 : file_index_offset + 4], 'little'):
+                return False
+
+        for i in range(invalid_files):
+            file_index_offset = index_table_offset + ((entry_count - (i + 1)) * 4)
+            if 0xFFFF != int.from_bytes(input_data[file_index_offset + 2 : file_index_offset + 4], 'little'):
+                return False
+
+        return True
+
+    # TODO: binary search
+    @classmethod
+    def get_file_entry_by_name(cls, file_name, input_data):
+        properties, _, bucket_count, bucket_size, entry_count = cls._get_archive_header(input_data)
+        mode = properties[cls.mode_keyword]
+        entry_size = cls.get_archive_mode_properties(mode)["entry_size"]
+
+        name_hash = cls.get_name_hash(file_name)
+        first_entry = 0
+        if mode == BinGluModes.SAFE_BUCKET_SEARCH:
+            first_entry = (name_hash % bucket_count) * bucket_size
+            entry_count = bucket_size
+        
+        print(first_entry)
+
+    @classmethod
+    def get_file_entry_by_index(cls, file_index, input_data, unsafe_access = False):
+        return cls._file_index_table_access(input_data, file_index, unsafe_access, 1)
+
+    @classmethod
+    def get_file_index_by_entry(cls, file_entry, input_data, unsafe_access = False):
+        return cls._file_index_table_access(input_data, file_entry, unsafe_access, 0)
+
+    @classmethod
+    def _file_index_table_access(cls, input_data, table_index, unsafe_access, table_value):
+        properties, _, _, _, entry_count = cls._get_archive_header(input_data)
+
+        if not unsafe_access:
+            index_table = cls._check_index_table(input_data)
+            if index_table is None:
+                raise BinGluError(305)
+            elif not index_table:
+                raise BinGluError(103)
+
+        mode = properties[cls.mode_keyword]
+        entry_size = cls.get_archive_mode_properties(mode)["entry_size"]
+
+        index_table_offset = 16 + (entry_count * entry_size)
+        file_index_offset = index_table_offset + [0, 2][table_value] + (table_index * 4)
+
+        return int.from_bytes(input_data[file_index_offset : file_index_offset + 2], 'little')
+
+    @classmethod
+    def _get_file_entry_data(cls, file_entry, input_data):
+        properties, _, _, _, entry_count = cls._get_archive_header(input_data)
+        mode = properties[cls.mode_keyword]
+        mode_properties = cls.get_archive_mode_properties(mode)
+        entry_struct, entry_size = mode_properties["entry_struct"], mode_properties["entry_size"]
+
+        if file_entry >= entry_count or file_entry < 0:
+            raise BinGluError(303)
+
+        entry_offset = 16 + (file_entry * entry_size)
+        raw_data = struct.unpack(entry_struct, input_data[entry_offset : entry_offset + entry_size])
+        data_offset, data_length, name_hash, name_offset = raw_data + ((None,) * (4 - len(raw_data)))
+
+        compression_value = (data_offset & 0xC0000000) >> 30
+        compression_type = {1: 'f', 2: 'b'}.get(compression_value)
+        data_offset &= 0x3FFFFFFF
+
+        is_invalid = ((data_length & 0x80000000) != 0) or ((data_offset & 0xC0000000) == 0xC0000000)
+        data_length &= 0x3FFFFFFF
+
+        if is_invalid:
+            return None
+
+        if name_offset is not None:
+            name_section_offset = 16 + (entry_count * entry_size)
+            read_pointer = name_section_offset + name_offset
+            file_name = ""
+            while(True):
+                next_char = input_data[read_pointer : read_pointer + 1]
+                if next_char == b'\0':
+                    break
+                file_name += next_char.decode("ascii")
+                read_pointer += 1
+        else:
+            file_name = None
+
+        return file_name, name_hash, compression_type, data_offset, data_length
+
+    @classmethod
+    def extract_file_data_by_name(cls, file_name, input_data, input_data_sub = None):
+        entry_index = cls.get_file_entry_by_name(file_name, input_data)
+        return cls._extract_file_data_by_entry(entry_index, input_data, input_data_sub)
+
+    @classmethod
+    def extract_file_data_by_index(cls, file_index, input_data, input_data_sub = None):
+        entry_index = cls.get_file_entry_by_index(file_index, input_data)
+        return cls._extract_file_data_by_entry(entry_index, input_data, input_data_sub)
+    
+    @classmethod
+    def _extract_file_data_by_entry(cls, entry_index, input_data, input_data_sub = None):
+        _, _, compression_type, data_offset, data_length = cls._get_file_entry_data(entry_index, input_data)
+        _, header_length, _, _, _ = self._get_archive_header(input_data)
+
+        header_length_adjusted = 0
+        if cls.archive_uses_single_file(input_data):
+            header_length_adjusted = header_length
+            input_data_sub = input_data
+        elif input_data_sub is None:
+            raise BinGluError(102)
+
+        if (data_offset < header_length_adjusted) or ((data_offset + data_length) > len(input_data_sub)):
+            raise BinGluError(307)
+
+        file_data = input_data_sub[data_offset : data_offset + data_length]
+        return cls.decompress_data(compression_type, file_data)
+
+    def import_archive(self, input_data, input_data_sub = None):
+        properties, header_length, bucket_count, bucket_size, entry_count, blz_algorithm = self._get_archive_header(input_data, get_advanced = True)
+
+        self.properties = properties
+
+        header_length_adjusted = 0
+        if not self.properties[self.single_file_keyword]:
+            if input_data_sub is None:
+                raise BinGluError(102)
+        else:
+            header_length_adjusted = header_length
+            input_data_sub = input_data
+
+        file_sorting = {}
+        sort_by_index = self._check_index_table(input_data)
+        compression_method = None
+        compression_confirmation = 0
+
+        for i in range(entry_count):
+            entry_data = self._get_file_entry_data(i, input_data)
+            if entry_data is None:
+                continue
+
+            file_name, name_hash, compression_type, data_offset, data_length = entry_data
+
+            if (data_offset < header_length_adjusted) or ((data_offset + data_length) > len(input_data_sub)):
+                raise BinGluError(307)
+
+            file_data = input_data_sub[data_offset : data_offset + data_length]
+
+            if compression_type == 'f':
+                lz_type = file_data[0]
+                comp_type = {
+                    0x10: 0,
+                    0x11: 1,
+                }[lz_type]
+                compression_type += str(comp_type)
+            elif compression_type == 'b':
+                compression_type += str(blz_algorithm)
+
+            file = {"file_name": file_name, "name_hash": name_hash if file_name is None else None, "compression_type": compression_type, "data": file_data, "data_compression_type": compression_type}
+
+            if sort_by_index:
+                file_index = self.get_file_index_by_entry(i, input_data, unsafe_access = True) # bypass slow table check since it was already checked once
+                file_sorting[file_index] = file
+            else:
+                file_sorting[(data_offset, data_length)] = file
+
+            if compression_type is not None:
+                if compression_method != compression_type and compression_method != 'm':
+                    if compression_confirmation == 0:
+                        compression_method = compression_type
+                    else:
+                        compression_method = 'm'
+
+                compression_confirmation += 1
+
+        for file in sorted(file_sorting.keys()):
+            self.files.append(file_sorting[file])
+
+        self.advanced_properties[self.compression_method_keyword] = compression_method
+        self.advanced_properties[self.pad_header_keyword] = (header_length & 0x7F) == 0
+
     def _calculate_buckets(self, prioritize_speed = True):
         bucket_size = 1
         last_bucket_amount = None
@@ -558,10 +648,9 @@ class BinGluArchive:
             last_bucket_amount, last_bucket_size = bucket_amount, bucket_size
             bucket_size += 1
 
-
     def export_archive(self):
         mode = self.properties[self.mode_keyword]
-        if mode != BinGlu4Modes.SAFE_BUCKET_SEARCH:
+        if mode != BinGluModes.SAFE_BUCKET_SEARCH:
             bucket_count = 1
             bucket_size = len(self.files)
         else:
@@ -574,7 +663,7 @@ class BinGluArchive:
         # name section
         name_section = bytearray()
 
-        if mode == BinGlu4Modes.SAFE_BUCKET_SEARCH:
+        if mode == BinGluModes.SAFE_BUCKET_SEARCH:
             name_section.extend(self.invalid_name.encode("ascii") + b'\0')
 
         hash_dict = {}
@@ -587,13 +676,13 @@ class BinGluArchive:
                 raise BinGluError(206, [file_index])
 
             if hsh in hash_dict.keys():
-                if mode != BinGlu4Modes.SAFE_BUCKET_SEARCH and mode != BinGlu4Modes.SAFE_BINARY_SEARCH:
+                if mode != BinGluModes.SAFE_BUCKET_SEARCH and mode != BinGluModes.SAFE_BINARY_SEARCH:
                     raise BinGluError(202, [hash_dict[hsh], file_index])
                 hash_collisions.add(hsh)
             hash_dict[hsh] = file_index
 
             files[file_index] = {"name_offset": len(name_section), "name_hash": hsh}
-            if mode == BinGlu4Modes.SAFE_BUCKET_SEARCH or mode == BinGlu4Modes.SAFE_BINARY_SEARCH:
+            if mode == BinGluModes.SAFE_BUCKET_SEARCH or mode == BinGluModes.SAFE_BINARY_SEARCH:
                 if name is None:
                     raise BinGluError(205, [file_index])
                 name_section.extend(name.encode('ascii') + b'\0')
@@ -681,7 +770,7 @@ class BinGluArchive:
 
             for file in sorted(bucket, key = lambda bucket_file: bucket_file["name_hash"]):
                 name_offset = file["name_offset"]
-                is_null = (mode != BinGlu4Modes.SAFE_BUCKET_SEARCH) and name_offset == 0
+                is_null = (mode != BinGluModes.SAFE_BUCKET_SEARCH) and name_offset == 0
                 if self.properties[self.preserve_order_keyword] and not is_null: name_offset += entry_count * 4
 
                 entry_data = [file["data_offset"], file["data_length"], file["name_hash"], name_offset]
@@ -716,7 +805,7 @@ class BinGluArchive:
         if self.properties[self.single_file_keyword]:    properties |= 0x0100
         if self.properties[self.preserve_order_keyword]: properties |= 0x0200
 
-        if mode != BinGlu4Modes.SAFE_BUCKET_SEARCH:
+        if mode != BinGluModes.SAFE_BUCKET_SEARCH:
             bucket_count, bucket_size = 0, 0
 
         output_file.extend(struct.pack("<HHIHH", properties, entry_count, header_length, bucket_count, bucket_size))
@@ -728,3 +817,153 @@ class BinGluArchive:
             return output_file, None
         else:
             return output_file, data_section
+
+
+
+class BG3Archive(BinGluArchive): # TODO: everything
+    supported_compression_methods = [None, 'm', 'f0', 'f1', 'b0', 'b1', 'b2']
+    supported_modes = [
+        BinGluModes.SAFE_INDEX
+    ]
+
+    # @classmethod
+    # def get_archive_mode(cls, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def archive_uses_single_file(cls, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def archive_uses_index_table(cls, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_archive_mode_properties(cls, mode):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_file_entry_by_name(cls, file_name, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_file_entry_by_index(cls, file_index, input_data, unsafe_access = False):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_file_index_by_entry(cls, file_entry, input_data, unsafe_access = False):
+    #     raise BinGluError(300)
+
+    @classmethod
+    def extract_file_data_by_name(cls, file_name, input_data, input_data_sub = None):
+        raise BinGluError(308)
+
+    # @classmethod
+    # def extract_file_data_by_index(cls, file_index, input_data, input_data_sub = None):
+    #     raise BinGluError(300)
+
+    # def import_archive(self, input_data, input_data_sub = None):
+    #     raise BinGluError(100)
+
+    # def export_archive(self, input_data, input_data_sub = None):
+    #     raise BinGluError(200)
+
+
+
+class BG2Archive(BinGluArchive): # TODO: everything
+    supported_compression_methods = [None, 'm', 'r']
+    supported_modes = [
+        BinGluModes.PREFIXED_INDEX
+    ]
+
+    # @classmethod
+    # def get_archive_mode(cls, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def archive_uses_single_file(cls, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def archive_uses_index_table(cls, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_archive_mode_properties(cls, mode):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_file_entry_by_name(cls, file_name, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_file_entry_by_index(cls, file_index, input_data, unsafe_access = False):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_file_index_by_entry(cls, file_entry, input_data, unsafe_access = False):
+    #     raise BinGluError(300)
+
+    @classmethod
+    def extract_file_data_by_name(cls, file_name, input_data, input_data_sub = None):
+        raise BinGluError(308)
+
+    # @classmethod
+    # def extract_file_data_by_index(cls, file_index, input_data, input_data_sub = None):
+    #     raise BinGluError(300)
+
+    # def import_archive(self, input_data, input_data_sub = None):
+    #     raise BinGluError(100)
+
+    # def export_archive(self, input_data, input_data_sub = None):
+    #     raise BinGluError(200)
+
+
+
+class BGArchive(BinGluArchive): # TODO: everything
+    supported_compression_methods = [None, 'm', 'r']
+    supported_modes = [
+        BinGluModes.SIMPLE_INDEX
+    ]
+
+    # @classmethod
+    # def get_archive_mode(cls, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def archive_uses_single_file(cls, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def archive_uses_index_table(cls, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_archive_mode_properties(cls, mode):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_file_entry_by_name(cls, file_name, input_data):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_file_entry_by_index(cls, file_index, input_data, unsafe_access = False):
+    #     raise BinGluError(300)
+
+    # @classmethod
+    # def get_file_index_by_entry(cls, file_entry, input_data, unsafe_access = False):
+    #     raise BinGluError(300)
+
+    @classmethod
+    def extract_file_data_by_name(cls, file_name, input_data, input_data_sub = None):
+        raise BinGluError(308)
+
+    # @classmethod
+    # def extract_file_data_by_index(cls, file_index, input_data, input_data_sub = None):
+    #     raise BinGluError(300)
+
+    # def import_archive(self, input_data, input_data_sub = None):
+    #     raise BinGluError(100)
+
+    # def export_archive(self, input_data, input_data_sub = None):
+    #     raise BinGluError(200)

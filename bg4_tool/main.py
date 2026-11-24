@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from bg4_tool.classes import BinGluArchive, BinGluError, BinGlu4Modes
+from bg4_tool.classes import BinGluArchive, BinGluError, BinGluModes
 from bg4_tool.constants import *
 
 
@@ -99,7 +99,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.mode_selector_text = QtWidgets.QLabel()
         self.mode_selector = QtWidgets.QComboBox()
-        self.mode_selector.addItems([str(i) for i in BinGluArchive.supported_modes])
+        self.mode_selector.addItems([str(i) for i in BinGluArchive.implemented_modes])
         self.mode_selector.currentIndexChanged.connect(self.set_mode)
         main_layout.addWidget(self.mode_selector_text, 0, 0)
         main_layout.addWidget(self.mode_selector, 1, 0)
@@ -126,7 +126,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.compression_selector_text = QtWidgets.QLabel()
         self.compression_selector = QtWidgets.QComboBox()
-        self.compression_selector.addItems([str(i) for i in BinGluArchive.supported_compression_methods])
+        self.compression_selector.addItems([str(i) for i in BinGluArchive.implemented_compression_methods])
         self.compression_selector.currentIndexChanged.connect(self.set_compression)
         main_layout.addWidget(self.compression_selector_text, 2, 0)
         main_layout.addWidget(self.compression_selector, 3, 0)
@@ -165,21 +165,33 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mode_selector_text.setText(self.tr("Archive Mode:"))
 
         modes = {
-            BinGlu4Modes.BINARY_SEARCH: [
+            BinGluModes.SIMPLE_INDEX: [
+                "this is a placeholder",
+                "this is a placeholder",
+            ],
+            BinGluModes.PREFIXED_INDEX: [
+                "this is a placeholder",
+                "this is a placeholder",
+            ],
+            BinGluModes.SAFE_INDEX: [
+                "this is a placeholder",
+                "this is a placeholder",
+            ],
+            BinGluModes.BINARY_SEARCH: [
                 self.tr("Compact Binary Search"),
                 self.tr("Uses binary searching to quickly sort through every file's name hash. Does not store file names, and fails to export if two file names share a hash."),
             ],
-            BinGlu4Modes.SAFE_BUCKET_SEARCH: [
+            BinGluModes.SAFE_BUCKET_SEARCH: [
                 self.tr("Quick Name Lookup"),
                 self.tr("Uses search buckets to narrow down the file being searched for extremely quickly. Stores file names in case two names share a hash."),
             ],
-            BinGlu4Modes.SAFE_BINARY_SEARCH: [
+            BinGluModes.SAFE_BINARY_SEARCH: [
                 self.tr("Safe Binary Search"),
                 self.tr("Uses binary searching to sort through every file's name hash. Stores file names in case two names share a hash."),
             ],
         }
 
-        for i, mode in enumerate(BinGluArchive.supported_modes):
+        for i, mode in enumerate(BinGluArchive.implemented_modes):
             name_string, desc_string = modes[mode]
             self.mode_selector.setItemText(i, self.tr("Mode {0}: {1}").format(mode.value, name_string))
             self.mode_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
@@ -235,9 +247,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.tr("Backward: CUE"),
                 self.tr("In-place LZSS-like compression, faster to decompress than Forward. Slow to compress, but produces files much smaller than official algorithms."),
             ],
+            'r': [
+                "this is a placeholder",
+                "this is a placeholder",
+            ],
         }
 
-        for i, compression in enumerate(BinGluArchive.supported_compression_methods):
+        for i, compression in enumerate(BinGluArchive.implemented_compression_methods):
             name_string, desc_string = compressions[compression]
             self.compression_selector.setItemText(i, name_string)
             self.compression_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
@@ -258,7 +274,7 @@ class MainWindow(QtWidgets.QMainWindow):
             #100: "Import Error: Unknown",
              101: self.tr("This file's header is not valid. It may be compressed, corrupted, or not an archive at all."),
             #102: "Import Error: Data File Not Provided",
-             103: self.tr("This file's header is not valid. It may be compressed, corrupted, or not an archive at all."),
+            #103: "The header uses file indexing, but the table is corrupted",
 
             #200: "Export Error: Unknown",
             #201: "Export Error: Buckets Too Small",
@@ -276,6 +292,7 @@ class MainWindow(QtWidgets.QMainWindow):
             #305: "Access Error: Indexed Access Not Supported",
             #306: "Access Error: Unsupported Compression Method",
              307: self.tr("A file attempted to read out-of-bounds data from the data section. Are you sure the correct data section was selected?"),
+            #308: "Access Error: Hashed Access Not Supported",
         }.get(error_code)
 
         #: Formatted as "Error 101 - Import Error: Bad Header" for example
@@ -369,7 +386,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def set_mode(self, mode_index):
         set_property = BinGluArchive.mode_keyword
-        mode = BinGluArchive.supported_modes[mode_index]
+        mode = BinGluArchive.implemented_modes[mode_index]
         self.current_binglu_data.set_property(set_property, mode)
         self._update_saved(False)
 
@@ -380,7 +397,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def set_compression(self, compression_index):
         set_property = BinGluArchive.compression_method_keyword
-        compression = BinGluArchive.supported_compression_methods[compression_index]
+        compression = BinGluArchive.implemented_compression_methods[compression_index]
         self.current_binglu_data.set_property(set_property, compression)
         self._update_saved(False)
 
@@ -411,10 +428,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _import_archive_file(self, primary_file, path):
         archive_data = BinGluArchive()
         try:
-            if archive_data.archive_uses_single_file(primary_file):
-                archive_data.import_archive(primary_file)
+            try:
+                archive_data.import_archive_general(primary_file)
                 archive_name = path.stem
-            else:
+            except BinGluError as e:
+                if e.error_code != 102:
+                    raise e
+
                 QtWidgets.QMessageBox.about(
                     self,
                     #: Window Title.
@@ -426,7 +446,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 if secondary_file is None:
                     return
 
-                archive_data.import_archive(primary_file, secondary_file)
+                archive_data.import_archive_general(primary_file, secondary_file)
                 common_name = os.path.commonprefix([str(path.stem), str(second_path.stem)])
                 archive_name = common_name.removesuffix("_")
                 if not archive_name:
@@ -444,7 +464,7 @@ class MainWindow(QtWidgets.QMainWindow):
         mode = self.current_binglu_data.get_property(key)
         warning = None
         match mode:
-            case BinGlu4Modes.BINARY_SEARCH:
+            case BinGluModes.BINARY_SEARCH:
                 warning = self.tr("You are using Mode 3 to export this archive. This is supported, but not recommended.\n\nSince file names are lost when exporting this way, you or other people will not be able to see file names when importing the archive.\n\nUsing Mode 3 also means other programs may not be able to open this archive properly.")
 
         if warning is not None:
@@ -558,10 +578,10 @@ class MainWindow(QtWidgets.QMainWindow):
         top_parent.full_item_name = ""
         top_parent.item_type = "top"
 
-    def rebuild_tree_view(self):
+    def rebuild_tree_view(self): # TODO: change the availability of toggles and compression mode depending on the current mode
         key = BinGluArchive.mode_keyword
         mode = self.current_binglu_data.get_property(key)
-        mode_index = BinGluArchive.supported_modes.index(mode)
+        mode_index = BinGluArchive.implemented_modes.index(mode)
         self.mode_selector.blockSignals(True)
         self.mode_selector.setCurrentIndex(mode_index)
         self.mode_selector.blockSignals(False)
@@ -572,7 +592,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         key = BinGluArchive.compression_method_keyword
         compression = self.current_binglu_data.get_property(key)
-        compression_index = BinGluArchive.supported_compression_methods.index(compression)
+        compression_index = BinGluArchive.implemented_compression_methods.index(compression)
         self.compression_selector.blockSignals(True)
         self.compression_selector.setCurrentIndex(compression_index)
         self.compression_selector.blockSignals(False)
