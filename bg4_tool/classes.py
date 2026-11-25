@@ -251,12 +251,10 @@ class BinGluArchive(ABC):
     def import_archive_general(cls, input_data, input_data_sub = None):
         for test_class in [BG4Archive, BG3Archive, BG2Archive, BGArchive]:
             try:
-                test_object = test_class.import_archive(input_data, input_data_sub)
+                return test_class.import_archive(input_data, input_data_sub)
             except BinGluError as e:
                 if e.error_code != 101 and e.error_code != 100:
                     raise e
-            else:
-                return test_object
         
         raise BinGluError(101)
 
