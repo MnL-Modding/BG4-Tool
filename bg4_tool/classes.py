@@ -895,13 +895,15 @@ class BG3Archive(BinGluArchive): # TODO: everything
     def get_file_entry_by_name(cls, file_name, input_data):
         raise BinGluError(308)
 
-    # @classmethod
-    # def get_file_entry_by_index(cls, file_index, input_data, unsafe_access = False):
-    #     raise BinGluError(300)
+    @classmethod
+    def get_file_entry_by_index(cls, file_index, input_data, unsafe_access = False):
+        base_index = cls.get_archive_base_index(input_data)
+        return file_index - base_index
 
-    # @classmethod
-    # def get_file_index_by_entry(cls, file_entry, input_data, unsafe_access = False):
-    #     raise BinGluError(300)
+    @classmethod
+    def get_file_index_by_entry(cls, file_entry, input_data, unsafe_access = False):
+        base_index = cls.get_archive_base_index(input_data)
+        return file_entry + base_index
 
     @classmethod
     def extract_file_data_by_name(cls, file_name, input_data, input_data_sub = None):
