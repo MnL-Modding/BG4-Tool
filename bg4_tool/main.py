@@ -312,7 +312,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     def new_file(self):
-        self.current_binglu_data = BinGluArchive()
+        self.current_binglu_data = BinGluArchive.new_archive()
         #: Name for a newly created archive.
         self._update_name(self.tr("Untitled"))
         self._update_saved(True)
@@ -426,10 +426,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.rebuild_tree_view()
 
     def _import_archive_file(self, primary_file, path):
-        archive_data = BinGluArchive()
+        archive_data = None
         try:
             try:
-                archive_data.import_archive_general(primary_file)
+                archive_data = BinGluArchive.import_archive_general(primary_file)
                 archive_name = path.stem
             except BinGluError as e:
                 if e.error_code != 102:
@@ -446,7 +446,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 if secondary_file is None:
                     return
 
-                archive_data.import_archive_general(primary_file, secondary_file)
+                archive_data = BinGluArchive.import_archive_general(primary_file, secondary_file)
                 common_name = os.path.commonprefix([str(path.stem), str(second_path.stem)])
                 archive_name = common_name.removesuffix("_")
                 if not archive_name:
