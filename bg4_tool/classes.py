@@ -24,7 +24,7 @@ def decompress_rlz(data):
 class BinGluModes(Enum):
     SIMPLE_INDEX       = 0
     PREFIXED_INDEX     = 1
-    SAFE_INDEX         = 2
+    COMPLEX_INDEX      = 2
     BINARY_SEARCH      = 3
     SAFE_BUCKET_SEARCH = 4
     SAFE_BINARY_SEARCH = 5
@@ -98,7 +98,7 @@ class BinGluArchive(ABC):
     implemented_modes = [
         BinGluModes.SIMPLE_INDEX,
         # BinGluModes.PREFIXED_INDEX,
-        # BinGluModes.SAFE_INDEX,
+        # BinGluModes.COMPLEX_INDEX,
         BinGluModes.BINARY_SEARCH,
         BinGluModes.SAFE_BUCKET_SEARCH,
         BinGluModes.SAFE_BINARY_SEARCH,
@@ -874,12 +874,12 @@ class BG3Archive(BinGluArchive): # TODO: everything
     pad_archive_amount = 0x80
     supported_compression_methods = [None, 'm', 'f0', 'f1', 'b0', 'b1', 'b2']
     supported_modes = [
-        BinGluModes.SAFE_INDEX
+        BinGluModes.COMPLEX_INDEX
     ]
 
     @classmethod
     def get_archive_mode(cls, input_data):
-        return BinGluModes.SAFE_INDEX
+        return BinGluModes.COMPLEX_INDEX
 
     # @classmethod
     # def archive_uses_single_file(cls, input_data):

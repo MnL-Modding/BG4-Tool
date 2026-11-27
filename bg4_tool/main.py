@@ -166,27 +166,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
         modes = {
             BinGluModes.SIMPLE_INDEX: [
-                "this is a placeholder",
+                self.tr("Simple Index Table ({0})").format("BG"),
                 "this is a placeholder",
             ],
             BinGluModes.PREFIXED_INDEX: [
-                "this is a placeholder",
+                self.tr("Prefixed Index Table ({0})").format("BG2"),
                 "this is a placeholder",
             ],
-            BinGluModes.SAFE_INDEX: [
-                "this is a placeholder",
+            BinGluModes.COMPLEX_INDEX: [
+                self.tr("Complex Index Table ({0})").format("BG3"),
                 "this is a placeholder",
             ],
             BinGluModes.BINARY_SEARCH: [
-                self.tr("Compact Binary Search"),
+                self.tr("Compact Binary Search ({0})").format("BG4"),
                 self.tr("Uses binary searching to quickly sort through every file's name hash. Does not store file names, and fails to export if two file names share a hash."),
             ],
             BinGluModes.SAFE_BUCKET_SEARCH: [
-                self.tr("Quick Name Lookup"),
+                self.tr("Quick Name Lookup ({0})").format("BG4"),
                 self.tr("Uses search buckets to narrow down the file being searched for extremely quickly. Stores file names in case two names share a hash."),
             ],
             BinGluModes.SAFE_BINARY_SEARCH: [
-                self.tr("Safe Binary Search"),
+                self.tr("Safe Binary Search ({0})").format("BG4"),
                 self.tr("Uses binary searching to sort through every file's name hash. Stores file names in case two names share a hash."),
             ],
         }
