@@ -111,8 +111,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         toggles = [
             BinGluArchive.single_file_keyword,
-            BinGluArchive.preserve_order_keyword,
-            BinGluArchive.pad_header_keyword,
+            BinGluArchive.use_index_keyword,
+            BinGluArchive.pad_archive_keyword,
         ]
 
         self.toggle_checkboxes = {}
@@ -196,17 +196,19 @@ class MainWindow(QtWidgets.QMainWindow):
             self.mode_selector.setItemText(i, self.tr("Mode {0}: {1}").format(mode.value, name_string))
             self.mode_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
 
+        pad_archive_amount = self.current_binglu_data.pad_archive_amount if self.current_binglu_data is not None else 128
+
         toggles = {
             BinGluArchive.single_file_keyword: [
                 self.tr("Export Single File"),
                 self.tr("Disabling this will split the archive into a '_Header' file and a '_Data' file. Lowers RAM overhead for extremely large archives."),
             ],
-            BinGluArchive.preserve_order_keyword: [
-                self.tr("Preserve File Order"),
-                self.tr("Creates an additional table that tracks the index of each file in the archive. Necessary for archives that can use an index to find a file."),
+            BinGluArchive.use_index_keyword: [
+                self.tr("Use File Index"),
+                self.tr("Creates a table that tracks the index of each file in the archive. Necessary for archives that can use an index to find a file."),
             ],
-            BinGluArchive.pad_header_keyword: [
-                self.tr("Pad Header to 128 Bytes"),
+            BinGluArchive.pad_archive_keyword: [
+                self.tr("Pad Archive to {0} Bytes").format(pad_archive_amount),
                 self.tr("Can help enforce byte alignment if the context for the archive requires it."),
             ],
         }
@@ -389,6 +391,7 @@ class MainWindow(QtWidgets.QMainWindow):
         mode = BinGluArchive.implemented_modes[mode_index]
         self.current_binglu_data.set_property(set_property, mode)
         self._update_saved(False)
+        self.rebuild_tree_view()
 
     def toggle_property(self, set_property):
         checked = self.toggle_checkboxes[set_property].isChecked()
@@ -535,38 +538,40 @@ class MainWindow(QtWidgets.QMainWindow):
         file = self.file_tree.itemAt(pos)
         if not file:
             item_name = ""
+            item_id = None
             item_type = "top"
         else:
             item_name = file.full_item_name
+            item_id = file.file_id
             item_type = file.item_type
 
-        if item_type == "file": self.file_context_menu(item_name, menu)
+        if item_type == "file": self.file_context_menu(item_name, item_id, menu)
 
         menu.exec(QtGui.QCursor.pos())
 
-    def file_context_menu(self, item_name, menu):
+    def file_context_menu(self, item_name, item_id, menu):
         def replace_file():
             data, _ = self._general_import_file()
             if data is None:
                 return
-            self.current_binglu_data.set_file_data(item_name, data)
+            self.current_binglu_data.set_file_data(item_id, data, is_by_index = True)
             self._update_saved(True)
 
-        def extract_file(item_name):
-            data = self.current_binglu_data.get_uncompressed_file_contents(item_name)
+        def extract_file(item_name, item_id):
+            data = self.current_binglu_data.get_uncompressed_file_contents(item_id, is_by_index = True)
             self._general_export_file(item_name, data)
 
         action_replace_file = QtGui.QAction(self.tr("Replace File Contents"), self)
         action_replace_file.triggered.connect(replace_file)
         menu.addAction(action_replace_file)
 
-        if self.current_binglu_data.get_file_is_compressed(item_name):
+        if self.current_binglu_data.get_file_is_compressed(item_id, is_by_index = True):
             string = self.tr("Decompress and Extract")
         else:
             string = self.tr("Extract File Contents")
 
         action_extract_file = QtGui.QAction(string, self)
-        action_extract_file.triggered.connect(partial(extract_file, item_name))
+        action_extract_file.triggered.connect(partial(extract_file, item_name, item_id))
         menu.addAction(action_extract_file)
 
 
@@ -577,6 +582,7 @@ class MainWindow(QtWidgets.QMainWindow):
         top_parent = NumericTreeItem(self.file_tree)
         top_parent.full_item_name = ""
         top_parent.item_type = "top"
+        top_parent.file_id = None
 
     def rebuild_tree_view(self): # TODO: change the availability of toggles and compression mode depending on the current mode
         key = BinGluArchive.mode_keyword
@@ -596,6 +602,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.compression_selector.blockSignals(True)
         self.compression_selector.setCurrentIndex(compression_index)
         self.compression_selector.blockSignals(False)
+
+        key = BinGluArchive.pad_archive_keyword
+        self.toggle_checkboxes[key].setText(self.tr("Pad Archive to {0} Bytes").format(self.current_binglu_data.pad_archive_amount))
 
         top_parent = self.file_tree.topLevelItem(0)
         files = self.current_binglu_data.files.copy()
@@ -625,6 +634,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     current_parent.full_item_name = full_directory_name if isinstance(file, str) else file
                     current_parent.item_type = "file" if j == target_file_id else "folder"
                     current_parent.needs_to_be_deleted = False
+                    current_parent.file_id = i
 
         self.update_tree_view()
 
@@ -638,10 +648,11 @@ class MainWindow(QtWidgets.QMainWindow):
             content = [name.split('/')[-1]] if isinstance(name, str) else [str(name)]
             if name == "":
                 content[0] = self.current_binglu_name
+            if name is None:
+                content[0] = ""
 
             if item.item_type == "file":
-                index = self.current_binglu_data.get_file_id_by_name_or_hash(name)
-                content.append(str(index))
+                content.append(str(item.file_id))
 
             self.file_tree.blockSignals(True)
             [item.setText(i, text) for i, text in enumerate(content)]
@@ -650,7 +661,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 case "folder":
                     item.setIcon(0, self.icons["folder"])
                 case "file":
-                    if self.current_binglu_data.get_file_is_compressed(name):
+                    if self.current_binglu_data.get_file_is_compressed(item.file_id, is_by_index = True):
                         item.setIcon(0, self.icons["blz"])
                     else:
                         item.setIcon(0, self.icons["file"])

@@ -88,13 +88,15 @@ class BinGluError(Exception):
 
 
 class BinGluArchive(ABC):
+    pad_archive_amount = None
+
     supported_compression_methods = []
     implemented_compression_methods = [None, 'm', 'f0', 'f1', 'b0', 'b1', 'b2', 'r']
     usable_compression_methods = ['f0', 'f1', 'b0', 'b1', 'b2', 'r']
 
     supported_modes = []
     implemented_modes = [
-        # BinGluModes.SIMPLE_INDEX,
+        BinGluModes.SIMPLE_INDEX,
         # BinGluModes.PREFIXED_INDEX,
         # BinGluModes.SAFE_INDEX,
         BinGluModes.BINARY_SEARCH,
@@ -104,11 +106,11 @@ class BinGluArchive(ABC):
 
     mode_keyword = "mode"
     single_file_keyword = "single_file"
-    preserve_order_keyword = "preserve_order"
+    use_index_keyword = "use_index"
     base_index_keyword = "base_index"
 
     compression_method_keyword = "compression_method"
-    pad_header_keyword = "pad_header"
+    pad_archive_keyword = "pad_archive"
 
     @classmethod
     @abstractmethod
@@ -211,17 +213,17 @@ class BinGluArchive(ABC):
     @classmethod
     def get_default_properties(cls):
         return {
-            cls.mode_keyword:           BinGluModes.SAFE_BUCKET_SEARCH,
-            cls.single_file_keyword:    True,
-            cls.preserve_order_keyword: False,
-            cls.base_index_keyword:     0, # TODO: let user change this
+            cls.mode_keyword:        BinGluModes.SAFE_BUCKET_SEARCH,
+            cls.single_file_keyword: True,
+            cls.use_index_keyword:   False,
+            cls.base_index_keyword:  0, # TODO: let user change this
         }
 
     @classmethod
     def get_default_advanced_properties(cls):
         return {
             cls.compression_method_keyword: 'b0',
-            cls.pad_header_keyword:         False,
+            cls.pad_archive_keyword:        False,
         }
 
     @classmethod
@@ -384,6 +386,7 @@ class BG4Archive(BinGluArchive):
     header_magic = b"BG4\0"
     invalid_name = "(invalid)"
 
+    pad_archive_amount = 0x80
     supported_compression_methods = [None, 'm', 'f0', 'f1', 'b0', 'b1', 'b2']
     supported_modes = [
         BinGluModes.BINARY_SEARCH,
@@ -404,8 +407,8 @@ class BG4Archive(BinGluArchive):
         properties = cls.get_default_properties()
         properties[cls.mode_keyword] = BinGluModes(properties_raw & 0x00FF)
 
-        properties[cls.single_file_keyword]    = (properties_raw & 0x0100) != 0
-        properties[cls.preserve_order_keyword] = (properties_raw & 0x0200) != 0
+        properties[cls.single_file_keyword] = (properties_raw & 0x0100) != 0
+        properties[cls.use_index_keyword]   = (properties_raw & 0x0200) != 0
 
         if entry_count != (bucket_count * bucket_size) and properties[cls.mode_keyword] == BinGluModes.SAFE_BUCKET_SEARCH:
             raise BinGluError(101)
@@ -429,7 +432,7 @@ class BG4Archive(BinGluArchive):
     @classmethod
     def archive_uses_index_table(cls, input_data):
         properties, _, _, _, _ = cls._get_archive_header(input_data)
-        return properties[cls.preserve_order_keyword]
+        return properties[cls.use_index_keyword]
 
     @classmethod
     def get_archive_base_index(cls, input_data):
@@ -649,7 +652,7 @@ class BG4Archive(BinGluArchive):
 
         advanced_properties = cls.get_default_advanced_properties()
         advanced_properties[cls.compression_method_keyword] = compression_method
-        advanced_properties[cls.pad_header_keyword] = (header_length & 0x7F) == 0
+        advanced_properties[cls.pad_archive_keyword] = (header_length & 0x7F) == 0
 
         out_obj = cls()
         out_obj.properties = properties
@@ -737,11 +740,11 @@ class BG4Archive(BinGluArchive):
         entry_size = self._get_archive_mode_properties(mode)["entry_size"]
 
         header_length = 16 + (entry_size * entry_count) + len(name_section)
-        if self.properties[self.preserve_order_keyword]: header_length += entry_count * 4
+        if self.properties[self.use_index_keyword]: header_length += entry_count * 4
 
         pad_amount = 4
-        if self.advanced_properties[self.pad_header_keyword]:
-            pad_amount = 0x80
+        if self.advanced_properties[self.pad_archive_keyword]:
+            pad_amount = self.pad_archive_amount
         extra_padding = (pad_amount - (header_length % pad_amount)) % pad_amount
         header_length += extra_padding
 
@@ -818,7 +821,7 @@ class BG4Archive(BinGluArchive):
             for file in sorted(bucket, key = lambda bucket_file: bucket_file["name_hash"]):
                 name_offset = file["name_offset"]
                 is_null = (mode != BinGluModes.SAFE_BUCKET_SEARCH) and name_offset == 0
-                if self.properties[self.preserve_order_keyword] and not is_null: name_offset += entry_count * 4
+                if self.properties[self.use_index_keyword] and not is_null: name_offset += entry_count * 4
 
                 entry_data = [file["data_offset"], file["data_length"], file["name_hash"], name_offset]
                 hash_table.extend(struct.pack(entry_struct, *entry_data[:entry_elements]))
@@ -832,7 +835,7 @@ class BG4Archive(BinGluArchive):
 
         # index table
         index_table = bytearray()
-        if self.properties[self.preserve_order_keyword]:
+        if self.properties[self.use_index_keyword]:
             for index_set in order_table:
                 index_table.extend(struct.pack("<HH", *index_set))
 
@@ -849,8 +852,8 @@ class BG4Archive(BinGluArchive):
             blz_algorithm = int(compression_method[1])
         properties |= blz_algorithm << 14
 
-        if self.properties[self.single_file_keyword]:    properties |= 0x0100
-        if self.properties[self.preserve_order_keyword]: properties |= 0x0200
+        if self.properties[self.single_file_keyword]: properties |= 0x0100
+        if self.properties[self.use_index_keyword]:   properties |= 0x0200
 
         if mode != BinGluModes.SAFE_BUCKET_SEARCH:
             bucket_count, bucket_size = 0, 0
@@ -868,6 +871,7 @@ class BG4Archive(BinGluArchive):
 
 
 class BG3Archive(BinGluArchive): # TODO: everything
+    pad_archive_amount = 0x80
     supported_compression_methods = [None, 'm', 'f0', 'f1', 'b0', 'b1', 'b2']
     supported_modes = [
         BinGluModes.SAFE_INDEX
@@ -916,7 +920,7 @@ class BG3Archive(BinGluArchive): # TODO: everything
     #     raise BinGluError(300)
 
     # @classmethod
-    # def import_archive(self, input_data, input_data_sub = None):
+    # def import_archive(cls, input_data, input_data_sub = None):
     #     raise BinGluError(100)
 
     # def export_archive(self, input_data, input_data_sub = None):
@@ -925,6 +929,7 @@ class BG3Archive(BinGluArchive): # TODO: everything
 
 
 class BG2Archive(BinGluArchive): # TODO: everything
+    pad_archive_amount = 0x200
     supported_compression_methods = [None, 'm', 'r']
     supported_modes = [
         BinGluModes.PREFIXED_INDEX
@@ -971,7 +976,7 @@ class BG2Archive(BinGluArchive): # TODO: everything
     #     raise BinGluError(300)
 
     # @classmethod
-    # def import_archive(self, input_data, input_data_sub = None):
+    # def import_archive(cls, input_data, input_data_sub = None):
     #     raise BinGluError(100)
 
     # def export_archive(self, input_data, input_data_sub = None):
@@ -980,54 +985,100 @@ class BG2Archive(BinGluArchive): # TODO: everything
 
 
 class BGArchive(BinGluArchive): # TODO: everything
+    pad_archive_amount = 0x200
     supported_compression_methods = [None, 'm', 'r']
     supported_modes = [
         BinGluModes.SIMPLE_INDEX
     ]
 
     @classmethod
-    def get_archive_mode(cls, input_data):
+    def _verify_header(cls, input_data):
+        header_end = int.from_bytes(input_data[:4], 'little')
+
+        last_offset = header_end
+        for i in range(1, (header_end + 3) // 4):
+            new_offset = int.from_bytes(input_data[(i * 4) : ((i + 1) * 4)], 'little')
+            if new_offset < last_offset:
+                raise BinGluError(101)
+            last_offset = new_offset
+
+    @classmethod
+    def get_archive_mode(cls, input_data = None):
         return BinGluModes.SIMPLE_INDEX
 
     @classmethod
-    def archive_uses_single_file(cls, input_data):
+    def archive_uses_single_file(cls, input_data = None):
         return True
 
     @classmethod
-    def archive_uses_index_table(cls, input_data):
+    def archive_uses_index_table(cls, input_data = None):
         return True
 
     @classmethod
-    def get_archive_base_index(cls, input_data):
+    def get_archive_base_index(cls, input_data = None):
         return 0
 
     @classmethod
-    def get_file_entry_by_name(cls, file_name, input_data):
+    def get_file_entry_by_name(cls, file_name = None, input_data = None):
         raise BinGluError(308)
 
     @classmethod
-    def get_file_entry_by_index(cls, file_index, input_data, unsafe_access = False):
+    def get_file_entry_by_index(cls, file_index, input_data = None, unsafe_access = False):
         return file_index
 
     @classmethod
-    def get_file_index_by_entry(cls, file_entry, input_data, unsafe_access = False):
+    def get_file_index_by_entry(cls, file_entry, input_data = None, unsafe_access = False):
         return file_entry
 
     @classmethod
-    def extract_file_data_by_name(cls, file_name, input_data, input_data_sub = None):
+    def extract_file_data_by_name(cls, file_name = None, input_data = None, input_data_sub = None):
         raise BinGluError(308)
 
-    # @classmethod
-    # def extract_file_data_by_index(cls, file_index, input_data, input_data_sub = None):
-    #     raise BinGluError(300)
+    @classmethod
+    def extract_file_data_by_index(cls, file_index, input_data, input_data_sub = None):
+        ... # TODO
 
-    # @classmethod
-    # def extract_file_data_by_entry(cls, entry_index, input_data, input_data_sub = None):
-    #     raise BinGluError(300)
+    @classmethod
+    def extract_file_data_by_entry(cls, entry_index, input_data, input_data_sub = None):
+        ... # TODO
 
-    # @classmethod
-    # def import_archive(self, input_data, input_data_sub = None):
-    #     raise BinGluError(100)
+    @classmethod
+    def import_archive(cls, input_data, input_data_sub = None):
+        cls._verify_header(input_data)
+        header_end = int.from_bytes(input_data[:4], 'little')
 
-    # def export_archive(self, input_data, input_data_sub = None):
-    #     raise BinGluError(200)
+        uses_padding = header_end % cls.pad_archive_amount == 0
+
+        last_offset = header_end
+        files = []
+        for i in range(1, (header_end + 3) // 4):
+            new_offset = int.from_bytes(input_data[(i * 4) : ((i + 1) * 4)], 'little')
+            if new_offset != 0xFFFFFFFF:
+                if new_offset % cls.pad_archive_amount != 0:
+                    uses_padding = False
+
+                file_data = input_data[last_offset : new_offset]
+                file = {"file_name": None, "name_hash": None, "compression_type": None, "data": file_data, "data_compression_type": None} # TODO: compression type
+                files.append(file)
+
+            last_offset = new_offset
+
+        properties = cls.get_default_properties()
+        properties[cls.mode_keyword] = cls.get_archive_mode(None)
+        properties[cls.single_file_keyword] = cls.archive_uses_single_file(None)
+        properties[cls.use_index_keyword] = cls.archive_uses_index_table(None)
+        properties[cls.base_index_keyword] = cls.get_archive_base_index(None)
+
+        advanced_properties = cls.get_default_advanced_properties()
+        # advanced_properties[cls.compression_method_keyword] = compression_method
+        advanced_properties[cls.pad_archive_keyword] = uses_padding
+
+        out_obj = cls()
+        out_obj.properties = properties
+        out_obj.advanced_properties = advanced_properties
+        out_obj.files = files
+
+        return out_obj
+
+    def export_archive(self, input_data, input_data_sub = None):
+        ... # TODO
