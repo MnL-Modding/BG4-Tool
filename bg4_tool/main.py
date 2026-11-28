@@ -31,6 +31,7 @@ if __name__ == '__main__':
     main()
 
 
+# TODO: all placeholder text
 # TODO: be able to drag and drop files to reorganize and move between folders
 # TODO: be able to drop archives onto the window to import them
 # TODO: check all files during import for whether there are nested archive files
@@ -99,6 +100,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.mode_selector_text = QtWidgets.QLabel()
         self.mode_selector = QtWidgets.QComboBox()
+        self.mode_selector_text.setBuddy(self.mode_selector)
         self.mode_selector.addItems([str(i) for i in BinGluArchive.implemented_modes])
         self.mode_selector.currentIndexChanged.connect(self.set_mode)
         main_layout.addWidget(self.mode_selector_text, 0, 0)
@@ -107,7 +109,7 @@ class MainWindow(QtWidgets.QMainWindow):
         checkboxes = QtWidgets.QWidget()
         checkboxes_layout = QtWidgets.QVBoxLayout(checkboxes)
         checkboxes_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(checkboxes, 4, 0)
+        main_layout.addWidget(checkboxes, 6, 0)
 
         toggles = [
             BinGluArchive.single_file_keyword,
@@ -134,10 +136,53 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.compression_selector_text = QtWidgets.QLabel()
         self.compression_selector = QtWidgets.QComboBox()
+        self.compression_selector_text.setBuddy(self.compression_selector)
         self.compression_selector.addItems([str(i) for i in BinGluArchive.implemented_compression_methods])
         self.compression_selector.currentIndexChanged.connect(self.set_compression)
         main_layout.addWidget(self.compression_selector_text, 2, 0)
         main_layout.addWidget(self.compression_selector, 3, 0)
+
+        self.replaceable_stack = QtWidgets.QStackedWidget()
+        self.replaceable_stack_text = QtWidgets.QStackedWidget()
+        main_layout.addWidget(self.replaceable_stack_text, 4, 0)
+        main_layout.addWidget(self.replaceable_stack, 5, 0)
+
+        self.bucket_solution_selector_text = QtWidgets.QLabel()
+        self.bucket_solution_selector = QtWidgets.QComboBox()
+        self.bucket_solution_selector_text.setBuddy(self.bucket_solution_selector)
+        self.bucket_solution_selector.addItems([str(i) for i in range(1)])
+        self.bucket_solution_selector.currentIndexChanged.connect(self.set_bucket_solution)
+        self.replaceable_stack_text.addWidget(self.bucket_solution_selector_text)
+        self.replaceable_stack.addWidget(self.bucket_solution_selector)
+
+        self.base_index_selector_text = QtWidgets.QLabel()
+        self.base_index_selector = QtWidgets.QSpinBox()
+        self.base_index_selector_text.setBuddy(self.base_index_selector)
+        self.base_index_selector.setRange(0, 0x7FFFFFFF)
+        self.base_index_selector.setSingleStep(0x1000)
+        self.base_index_selector.setDisplayIntegerBase(16)
+        self.base_index_selector.setPrefix("0x")
+        self.base_index_selector.valueChanged.connect(self.set_base_index)
+        self.replaceable_stack_text.addWidget(self.base_index_selector_text)
+        self.replaceable_stack.addWidget(self.base_index_selector)
+
+        self.padding_type_selector_text = QtWidgets.QLabel()
+        self.padding_type_selector = QtWidgets.QComboBox()
+        self.padding_type_selector_text.setBuddy(self.padding_type_selector)
+        self.padding_type_selector.addItems([str(i) for i in range(2)])
+        self.padding_type_selector.currentIndexChanged.connect(self.set_padding_type)
+        self.replaceable_stack_text.addWidget(self.padding_type_selector_text)
+        self.replaceable_stack.addWidget(self.padding_type_selector)
+
+        self.fake_padding_type_selector_text = QtWidgets.QLabel()
+        self.fake_padding_type_selector_text.setEnabled(False)
+        self.fake_padding_type_selector = QtWidgets.QComboBox()
+        self.fake_padding_type_selector.setEnabled(False)
+        self.fake_padding_type_selector_text.setBuddy(self.fake_padding_type_selector)
+        self.fake_padding_type_selector.addItems([str(i) for i in range(2)])
+        self.fake_padding_type_selector.setCurrentIndex(1)
+        self.replaceable_stack_text.addWidget(self.fake_padding_type_selector_text)
+        self.replaceable_stack.addWidget(self.fake_padding_type_selector)
 
         self.file_tree = QtWidgets.QTreeWidget()
         self.file_tree.setColumnCount(2)
@@ -145,7 +190,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.file_tree.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_tree.customContextMenuRequested.connect(self.tree_context_menu)
         self.file_tree.setItemDelegate(IndexedItemDelegate(self.file_tree))
-        main_layout.addWidget(self.file_tree, 5, 0)
+        main_layout.addWidget(self.file_tree, 7, 0)
 
         self._set_program_icons()
         self._set_program_text()
@@ -272,6 +317,43 @@ class MainWindow(QtWidgets.QMainWindow):
             name_string, desc_string = compressions[compression]
             self.compression_selector.setItemText(i, name_string)
             self.compression_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
+
+        self.bucket_solution_selector_text.setText("this is a placeholder")
+
+        bucket_solution_methods = [
+            [
+                "this is a placeholder",
+                "this is a placeholder",
+            ],
+        ]
+
+        for i, method in enumerate(bucket_solution_methods):
+            name_string, desc_string = method
+            self.bucket_solution_selector.setItemText(i, name_string)
+            self.bucket_solution_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
+
+        self.base_index_selector_text.setText(self.tr("Base Index"))
+        self.base_index_selector.setToolTip(self.tr("The base value that gets subtracted from the index when looking up a file in the archive. Essentially, where the archive is 'mounted.'"))
+
+        self.padding_type_selector_text.setText(self.tr("Archive Padding Type"))
+        self.fake_padding_type_selector_text.setText(self.tr("Archive Padding Type"))
+
+        padding_types = [
+            [
+                self.tr("0x00 Bytes"),
+                self.tr("This option effectively makes no difference, its only purpose is for byte-matching existing archives."),
+            ], [
+                self.tr("0xFF Bytes"),
+                self.tr("This option effectively makes no difference, its only purpose is for byte-matching existing archives."),
+            ],
+        ]
+
+        for i, padding_type in enumerate(padding_types):
+            name_string, desc_string = padding_type
+            self.padding_type_selector.setItemText(i, name_string)
+            self.padding_type_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
+            self.fake_padding_type_selector.setItemText(i, name_string)
+            self.fake_padding_type_selector.setItemData(i, desc_string, QtCore.Qt.ItemDataRole.ToolTipRole)
         
         self.file_tree.setHeaderLabels([self.tr("File Tree")])
 
@@ -415,6 +497,21 @@ class MainWindow(QtWidgets.QMainWindow):
         set_property = BinGluArchive.compression_method_keyword
         compression = BinGluArchive.implemented_compression_methods[compression_index]
         self.current_binglu_data.set_property(set_property, compression)
+        self._update_saved(False)
+
+    def set_bucket_solution(self, bucket_solution_mode):
+        set_property = BinGluArchive.bucket_solution_keyword
+        self.current_binglu_data.set_property(set_property, bucket_solution_mode)
+        self._update_saved(False)
+
+    def set_base_index(self, base_index):
+        set_property = BinGluArchive.base_index_keyword
+        self.current_binglu_data.set_property(set_property, base_index)
+        self._update_saved(False)
+
+    def set_padding_type(self, padding_type):
+        set_property = BinGluArchive.padding_type_keyword
+        self.current_binglu_data.set_property(set_property, padding_type)
         self._update_saved(False)
 
     def import_archive_file(self):
@@ -629,6 +726,32 @@ class MainWindow(QtWidgets.QMainWindow):
         self.compression_selector.blockSignals(True)
         self.compression_selector.setCurrentIndex(compression_index)
         self.compression_selector.blockSignals(False)
+
+        uses_buckets = mode == BinGluModes.SAFE_BUCKET_SEARCH
+        self.bucket_solution_selector_text.setEnabled(uses_buckets)
+        self.bucket_solution_selector.setEnabled(uses_buckets)
+
+        replaceable_widgets = [
+            [BinGluArchive.bucket_solution_keyword, self.bucket_solution_selector, self.bucket_solution_selector_text, self.bucket_solution_selector.setCurrentIndex],
+            [BinGluArchive.base_index_keyword, self.base_index_selector, self.base_index_selector_text, self.base_index_selector.setValue],
+            [BinGluArchive.padding_type_keyword, self.padding_type_selector, self.padding_type_selector_text, self.padding_type_selector.setCurrentIndex],
+        ]
+
+        all_failed = True
+        for i, (key, widget, widget_text, property_setter) in enumerate(replaceable_widgets):
+            prop = self.current_binglu_data.get_property(key)
+            widget.blockSignals(True)
+            property_setter(prop)
+            widget.blockSignals(False)
+
+            if key in self.current_binglu_data.supported_properties:
+                all_failed = False
+                self.replaceable_stack_text.setCurrentIndex(i)
+                self.replaceable_stack.setCurrentIndex(i)
+
+        if all_failed:
+            self.replaceable_stack_text.setCurrentIndex(i + 1)
+            self.replaceable_stack.setCurrentIndex(i + 1)
 
         key = BinGluArchive.pad_archive_keyword
         self.toggle_checkboxes[key].setText(self.tr("Pad Archive to {0} Bytes").format(self.current_binglu_data.pad_archive_amount))
