@@ -116,6 +116,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ]
 
         self.toggle_checkboxes = {}
+        self.fake_checkboxes = {}
         for toggle in toggles:
             checkbox = QtWidgets.QCheckBox()
             checkboxes_layout.addWidget(checkbox)
@@ -123,6 +124,13 @@ class MainWindow(QtWidgets.QMainWindow):
             checkbox.clicked.connect(partial(self.toggle_property, toggle))
 
             self.toggle_checkboxes[toggle] = checkbox
+
+            fakebox = QtWidgets.QCheckBox()
+            fakebox.setEnabled(False)
+            index = checkboxes_layout.indexOf(checkbox)
+            checkboxes_layout.insertWidget(index, fakebox)
+
+            self.fake_checkboxes[toggle] = fakebox
 
         self.compression_selector_text = QtWidgets.QLabel()
         self.compression_selector = QtWidgets.QComboBox()
@@ -214,6 +222,11 @@ class MainWindow(QtWidgets.QMainWindow):
         }
 
         for key, checkbox in self.toggle_checkboxes.items():
+            name_string, desc_string = toggles.get(key, ["", ""])
+            checkbox.setText(name_string)
+            checkbox.setToolTip(desc_string)
+
+        for key, checkbox in self.fake_checkboxes.items():
             name_string, desc_string = toggles.get(key, ["", ""])
             checkbox.setText(name_string)
             checkbox.setToolTip(desc_string)
@@ -584,7 +597,7 @@ class MainWindow(QtWidgets.QMainWindow):
         top_parent.item_type = "top"
         top_parent.file_id = None
 
-    def rebuild_tree_view(self): # TODO: change the availability of toggles and compression mode depending on the current mode
+    def rebuild_tree_view(self): # TODO: change the availability of compression mode depending on the current mode
         key = BinGluArchive.mode_keyword
         mode = self.current_binglu_data.get_property(key)
         mode_index = BinGluArchive.implemented_modes.index(mode)
@@ -592,9 +605,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mode_selector.setCurrentIndex(mode_index)
         self.mode_selector.blockSignals(False)
 
+        getter_methods = {
+            BinGluArchive.single_file_keyword: self.current_binglu_data.archive_uses_single_file,
+            BinGluArchive.use_index_keyword: self.current_binglu_data.archive_uses_index_table,
+            BinGluArchive.pad_archive_keyword: lambda x: False,
+        }
+
         for key, checkbox in self.toggle_checkboxes.items():
-            toggle_state = self.current_binglu_data.get_property(key)
-            checkbox.setChecked(toggle_state)
+            if key in self.current_binglu_data.supported_properties:
+                toggle_state = self.current_binglu_data.get_property(key)
+                checkbox.setChecked(toggle_state)
+                checkbox.setHidden(False)
+                self.fake_checkboxes[key].setHidden(True)
+            else:
+                toggle_state = getter_methods[key]()
+                self.fake_checkboxes[key].setChecked(toggle_state)
+                checkbox.setHidden(True)
+                self.fake_checkboxes[key].setHidden(False)
 
         key = BinGluArchive.compression_method_keyword
         compression = self.current_binglu_data.get_property(key)
@@ -605,6 +632,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         key = BinGluArchive.pad_archive_keyword
         self.toggle_checkboxes[key].setText(self.tr("Pad Archive to {0} Bytes").format(self.current_binglu_data.pad_archive_amount))
+        self.fake_checkboxes[key].setText(self.tr("Pad Archive to {0} Bytes").format(self.current_binglu_data.pad_archive_amount))
 
         top_parent = self.file_tree.topLevelItem(0)
         files = self.current_binglu_data.files.copy()
